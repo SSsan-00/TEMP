@@ -1,0 +1,2153 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>NEKKEN: TEST MODE</title>
+
+    <!--three.jsをインポート -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <style>
+      /* テスト画面用のスタイル。ゲーム用UIは全部 display:none にする */
+
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        padding: 16px;
+        background: #111;
+        color: #eee;
+      }
+
+      h1 {
+        font-size: 20px;
+        margin-bottom: 12px;
+      }
+
+      #test-panel {
+        border: 1px solid #444;
+        padding: 12px;
+        margin-bottom: 16px;
+        background: #1b1b1b;
+        border-radius: 4px;
+      }
+
+      #test-panel button {
+        margin: 4px;
+        padding: 6px 12px;
+        border-radius: 3px;
+        border: 1px solid #555;
+        background: #222;
+        color: #eee;
+        cursor: pointer;
+      }
+
+      #test-panel button:hover {
+        background: #333;
+      }
+
+      #test-log {
+        background: #000;
+        color: #0f0;
+        padding: 8px;
+        border-radius: 4px;
+        border: 1px solid #333;
+        max-height: 300px;
+        overflow-y: auto;
+        font-size: 12px;
+        font-family: "SF Mono", "Consolas", "Menlo", monospace;
+      }
+
+      /* ゲーム用DOMはまとめて非表示にしておく */
+      #game-dom-root {
+        display: none;
+      }
+
+      /* game-container は最低限サイズを持たせておく（three.js の renderer がここに生える） */
+      #game-container {
+        width: 400px;
+        height: 300px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <h1>NEKKEN: TEST MODE</h1>
+
+    <!-- ■■ テスト操作パネル ■■ -->
+    <div id="test-panel">
+      <button onclick="runAllTests()">テスト実行</button>
+    </div>
+
+    <pre id="test-log">// テスト結果がここに流れます</pre>
+
+    <!-- =========================================================
+     ▼▼▼ ここから下は「ゲーム本体コード」が期待している DOM 群 ▼▼▼
+     実際のプレイ画面は不要なので、全部非表示にしてある
+     ========================================================= -->
+    <div id="game-dom-root">
+      <!-- three.js の描画先 -->
+      <div id="game-container"></div>
+
+      <!-- キーボードヒント用 -->
+      <div id="kb-hint"></div>
+
+      <!-- HUD（HPバー / ゲージ） -->
+      <div id="hud">
+        <div>
+          <!-- プレイヤーHPバー -->
+          <div id="p1-hp"></div>
+          <div id="p1-gauge"></div>
+        </div>
+        <div>
+          <!-- 敵HPバー -->
+          <div id="p2-hp"></div>
+          <div id="p2-gauge"></div>
+        </div>
+        <div id="enemy-name"></div>
+        <div id="level-display"></div>
+      </div>
+
+      <!-- 操作エリア（アナログスティック + ボタン） -->
+      <div id="controls-area">
+        <!-- バーチャルスティック -->
+        <div id="joystick-zone">
+          <div id="stick-base">
+            <div id="stick-knob"></div>
+          </div>
+        </div>
+
+        <!-- アクションボタン群 -->
+        <div id="action-zone">
+          <button id="btn-guard" class="btn-action">GRD</button>
+          <button id="btn-ult" class="btn-action">ULT</button>
+          <button id="btn-sp" class="btn-action">SP</button>
+          <button id="btn-dash" class="btn-action">DSH</button>
+          <button id="btn-jump" class="btn-action">JMP</button>
+          <button id="btn-atk" class="btn-action">ATK</button>
+        </div>
+      </div>
+
+      <!-- タイトル / セレクト / リザルト画面（本体コードが参照するだけ） -->
+      <div id="title-screen">
+        <button id="start-btn">START</button>
+      </div>
+
+      <div id="select-screen">
+        <div id="char-grid"></div>
+      </div>
+
+      <div id="result-screen">
+        <div id="result-msg"></div>
+        <button id="retry-btn">RETRY</button>
+      </div>
+    </div>
+
+    <!-- TEST対象のScript(JS)を下に貼り付ける -->
+    <script>
+      const Input = {
+        x: 0,
+        y: 0,
+        attack: false,
+        jump: false,
+        special: false,
+        dash: false,
+        guard: false,
+        ultimate: false,
+        keys: {},
+        stick: {
+          active: false,
+          startX: 0,
+          startY: 0,
+          currX: 0,
+          currY: 0,
+          maxDist: 40,
+        },
+        init: function () {
+          window.addEventListener("keydown", (e) => {
+            this.keys[e.code] = true;
+            if (e.code === "KeyZ") this.attack = true;
+            if (e.code === "KeyX") this.special = true;
+            if (e.code === "Space") this.jump = true;
+            if (e.code === "ShiftLeft" || e.code === "ShiftRight")
+              this.dash = true;
+            if (e.code === "KeyC") this.guard = true;
+            if (e.code === "KeyV") this.ultimate = true;
+          });
+          window.addEventListener("keyup", (e) => {
+            this.keys[e.code] = false;
+            if (e.code === "KeyZ") this.attack = false;
+            if (e.code === "KeyX") this.special = false;
+            if (e.code === "Space") this.jump = false;
+            if (e.code === "ShiftLeft" || e.code === "ShiftRight")
+              this.dash = false;
+            if (e.code === "KeyC") this.guard = false;
+            if (e.code === "KeyV") this.ultimate = false;
+          });
+          if (!("ontouchstart" in window))
+            document.getElementById("kb-hint").style.display = "block";
+          const stickBase = document.getElementById("stick-base"),
+            stickKnob = document.getElementById("stick-knob"),
+            zone = document.getElementById("joystick-zone");
+          const handleMove = (clientX, clientY) => {
+            if (!this.stick.active) return;
+            const rect = stickBase.getBoundingClientRect(),
+              centerX = rect.left + rect.width / 2,
+              centerY = rect.top + rect.height / 2;
+            let dx = clientX - centerX,
+              dy = clientY - centerY,
+              dist = Math.hypot(dx, dy);
+            if (dist > this.stick.maxDist) {
+              const r = this.stick.maxDist / dist;
+              dx *= r;
+              dy *= r;
+            }
+            stickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+            this.x = dx / this.stick.maxDist;
+            this.y = dy / this.stick.maxDist;
+          };
+          const resetStick = () => {
+            this.stick.active = false;
+            this.x = 0;
+            this.y = 0;
+            stickKnob.style.transform = `translate(-50%, -50%)`;
+          };
+          zone.addEventListener(
+            "touchstart",
+            (e) => {
+              e.preventDefault();
+              this.stick.active = true;
+              handleMove(e.touches[0].clientX, e.touches[0].clientY);
+            },
+            { passive: false }
+          );
+          zone.addEventListener(
+            "touchmove",
+            (e) => {
+              e.preventDefault();
+              handleMove(e.touches[0].clientX, e.touches[0].clientY);
+            },
+            { passive: false }
+          );
+          zone.addEventListener("touchend", resetStick);
+          zone.addEventListener("mousedown", (e) => {
+            this.stick.active = true;
+            handleMove(e.clientX, e.clientY);
+          });
+          window.addEventListener("mousemove", (e) => {
+            if (this.stick.active) handleMove(e.clientX, e.clientY);
+          });
+          window.addEventListener("mouseup", resetStick);
+          const bindBtn = (id, prop) => {
+            const el = document.getElementById(id);
+            const press = (e) => {
+              if (e.type === "touchstart") e.preventDefault();
+              this[prop] = true;
+              el.classList.add("pressed");
+            };
+            const release = (e) => {
+              if (e.type === "touchend") e.preventDefault();
+              this[prop] = false;
+              el.classList.remove("pressed");
+            };
+            el.addEventListener("touchstart", press, { passive: false });
+            el.addEventListener("touchend", release);
+            el.addEventListener("mousedown", press);
+            el.addEventListener("mouseup", release);
+            el.addEventListener("mouseleave", release);
+            el.addEventListener("touchcancel", release);
+          };
+          bindBtn("btn-atk", "attack");
+          bindBtn("btn-jump", "jump");
+          bindBtn("btn-sp", "special");
+          bindBtn("btn-dash", "dash");
+          bindBtn("btn-guard", "guard");
+          bindBtn("btn-ult", "ultimate");
+          window.addEventListener("touchend", (e) => {
+            if (e.touches.length === 0) this.reset();
+          });
+        },
+        reset: function () {
+          this.x = 0;
+          this.y = 0;
+          this.attack = false;
+          this.jump = false;
+          this.special = false;
+          this.dash = false;
+          this.guard = false;
+          this.ultimate = false;
+          this.stick.active = false;
+          document
+            .querySelectorAll(".btn-action")
+            .forEach((b) => b.classList.remove("pressed"));
+          const k = document.getElementById("stick-knob");
+          if (k) k.style.transform = `translate(-50%, -50%)`;
+        },
+        update: function () {
+          let kx = 0,
+            ky = 0;
+          if (this.keys["ArrowLeft"]) kx -= 1;
+          if (this.keys["ArrowRight"]) kx += 1;
+          if (this.keys["ArrowUp"]) ky -= 1;
+          if (this.keys["ArrowDown"]) ky += 1;
+          if (!this.stick.active) {
+            this.x = kx;
+            this.y = ky;
+          }
+        },
+      };
+
+      const GAME_STATE = { TITLE: 0, SELECT: 1, FIGHT: 2, END: 3 };
+      let currentState = GAME_STATE.TITLE;
+      let scene, camera, renderer, clock;
+      let player, enemy;
+      let particles = [],
+        projectiles = [];
+      let currentLevel = 0,
+        retryCredits = 3;
+
+      const PLAYER_CATS = [
+        {
+          name: "VORTEX",
+          color: 0x221111,
+          trim: 0xff8800,
+          eye: 0xffd700,
+          socks: false,
+          pattern: "sabi",
+          speed: 1.0,
+          power: 1.3,
+          hpMulti: 1.1,
+        },
+        {
+          name: "BLADE",
+          color: 0xbbbbbb,
+          trim: 0x111111,
+          eye: 0xdfff00,
+          socks: true,
+          pattern: "stripe",
+          speed: 1.4,
+          power: 0.9,
+          hpMulti: 0.9,
+        },
+        {
+          name: "CHROME",
+          color: 0xffffff,
+          trim: 0x00ffff,
+          eye: 0x00ffff,
+          socks: false,
+          pattern: "solid",
+          speed: 1.0,
+          power: 1.0,
+          hpMulti: 1.0,
+        },
+        {
+          name: "SHADOW",
+          color: 0x111111,
+          trim: 0x5500ff,
+          eye: 0xff0000,
+          socks: true,
+          pattern: "solid",
+          speed: 1.2,
+          power: 0.9,
+          hpMulti: 0.9,
+        },
+      ];
+      const ENEMY_CATS = [
+        {
+          name: "LV1: STRAY",
+          color: 0x888888,
+          trim: 0xaaaaaa,
+          eye: 0x00ff00,
+          socks: false,
+          pattern: "solid",
+          speed: 0.8,
+          power: 0.7,
+          hpMulti: 0.8,
+          aiLevel: 1,
+        },
+        {
+          name: "LV2: GINGER",
+          color: 0xffcc88,
+          trim: 0xcc6600,
+          eye: 0xffff00,
+          socks: true,
+          pattern: "stripe",
+          speed: 0.9,
+          power: 0.8,
+          hpMulti: 0.9,
+          aiLevel: 2,
+        },
+        {
+          name: "LV3: MOSS",
+          color: 0x224422,
+          trim: 0x44ff44,
+          eye: 0x00ff00,
+          socks: false,
+          pattern: "sabi",
+          speed: 1.0,
+          power: 1.0,
+          hpMulti: 1.0,
+          aiLevel: 3,
+        },
+        {
+          name: "LV4: AQUA",
+          color: 0x004488,
+          trim: 0x00ffff,
+          eye: 0x00ffff,
+          socks: true,
+          pattern: "solid",
+          speed: 1.1,
+          power: 1.0,
+          hpMulti: 1.0,
+          aiLevel: 4,
+        },
+        {
+          name: "LV5: VOLT",
+          color: 0xffff00,
+          trim: 0x222222,
+          eye: 0xff0000,
+          socks: false,
+          pattern: "stripe",
+          speed: 1.4,
+          power: 1.1,
+          hpMulti: 1.2,
+          aiLevel: 5,
+        },
+        {
+          name: "LV6: MAGMA",
+          color: 0x440000,
+          trim: 0xff4400,
+          eye: 0xffaa00,
+          socks: false,
+          pattern: "sabi",
+          speed: 1.1,
+          power: 1.6,
+          hpMulti: 1.2,
+          aiLevel: 6,
+        },
+        {
+          name: "LV7: PHANTOM",
+          color: 0x220033,
+          trim: 0xff00ff,
+          eye: 0xff00ff,
+          socks: true,
+          pattern: "stripe",
+          speed: 1.4,
+          power: 1.3,
+          hpMulti: 1.3,
+          aiLevel: 7,
+        },
+        {
+          name: "LV8: BLADE-X",
+          color: 0xaaaaaa,
+          trim: 0x000000,
+          eye: 0x00ffcc,
+          socks: true,
+          pattern: "stripe",
+          speed: 1.6,
+          power: 1.3,
+          hpMulti: 1.3,
+          aiLevel: 8,
+        },
+        {
+          name: "LV9: VORTEX-Z",
+          color: 0x110000,
+          trim: 0xffaa00,
+          eye: 0xff0000,
+          socks: false,
+          pattern: "sabi",
+          speed: 1.3,
+          power: 1.6,
+          hpMulti: 1.4,
+          aiLevel: 9,
+          infiniteBeams: true,
+        },
+        {
+          name: "LV10: GENESIS",
+          color: 0xffffff,
+          trim: 0xd4af37,
+          eye: 0xffffff,
+          socks: true,
+          pattern: "sabi",
+          speed: 1.5,
+          power: 1.8,
+          hpMulti: 1.6,
+          aiLevel: 10,
+          infiniteBeams: true,
+        },
+      ];
+      let playerIdx = 0;
+
+      const AudioSys = {
+        ctx: null,
+        init: function () {
+          if (!this.ctx)
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        },
+        playTone: function (freq, type, dur, vol = 0.1) {
+          if (!this.ctx) return;
+          const t = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, t);
+          osc.frequency.exponentialRampToValueAtTime(freq * 0.1, t + dur);
+          g.gain.setValueAtTime(vol, t);
+          g.gain.exponentialRampToValueAtTime(0.01, t + dur);
+          osc.connect(g);
+          g.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(t + dur);
+        },
+        // ★追加: 猫の鳴き声生成関数
+        meow: function (isPain = false) {
+          if (!this.ctx) return;
+          const t = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          const filter = this.ctx.createBiquadFilter();
+
+          osc.type = "sawtooth"; // 倍音成分の多い波形で猫の声っぽく
+          filter.type = "lowpass";
+          filter.frequency.value = 1000;
+
+          const startFreq = isPain
+            ? 500 + Math.random() * 200
+            : 300 + Math.random() * 150;
+          const duration = isPain ? 0.2 : 0.4 + Math.random() * 0.3;
+
+          osc.frequency.setValueAtTime(startFreq, t);
+          // ピッチ変化: 上がって下がる (ニャ〜)
+          osc.frequency.linearRampToValueAtTime(
+            startFreq * 1.5,
+            t + duration * 0.3
+          );
+          osc.frequency.linearRampToValueAtTime(startFreq * 0.8, t + duration);
+
+          // 音量変化
+          gain.gain.setValueAtTime(0, t);
+          gain.gain.linearRampToValueAtTime(0.1, t + duration * 0.1);
+          gain.gain.exponentialRampToValueAtTime(0.01, t + duration);
+
+          osc.connect(filter);
+          filter.connect(gain);
+          gain.connect(this.ctx.destination);
+
+          osc.start(t);
+          osc.stop(t + duration);
+        },
+        hit: () => AudioSys.playTone(150, "square", 0.2, 0.2),
+        swing: () => AudioSys.playTone(400, "sawtooth", 0.1, 0.05),
+        jump: () => AudioSys.playTone(300, "sine", 0.2, 0.1),
+        beam: () => AudioSys.playTone(600, "square", 0.3, 0.1),
+        dash: () => AudioSys.playTone(200, "triangle", 0.1, 0.1),
+        ultimate: () => AudioSys.playTone(800, "square", 1.0, 0.3),
+      };
+
+      function init3D() {
+        const container = document.getElementById("game-container");
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a12);
+        scene.fog = new THREE.FogExp2(0x0a0a12, 0.04);
+        camera = new THREE.PerspectiveCamera(
+          45,
+          container.clientWidth / container.clientHeight,
+          0.1,
+          100
+        );
+        camera.position.set(0, 6, 14);
+        renderer = new THREE.WebGLRenderer({
+          antialias: true,
+          powerPreference: "high-performance",
+        });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.shadowMap.enabled = true;
+        container.appendChild(renderer.domElement);
+        const amb = new THREE.AmbientLight(0x404040, 2.0);
+        scene.add(amb);
+        const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+        dir.position.set(5, 10, 5);
+        dir.castShadow = true;
+        scene.add(dir);
+        const grid = new THREE.GridHelper(40, 40, 0x00ffff, 0x222222);
+        scene.add(grid);
+        const plane = new THREE.Mesh(
+          new THREE.PlaneGeometry(100, 100),
+          new THREE.MeshBasicMaterial({ color: 0x050505 })
+        );
+        plane.rotation.x = -Math.PI / 2;
+        plane.position.y = -0.1;
+        scene.add(plane);
+        clock = new THREE.Clock();
+        window.addEventListener("resize", () => {
+          camera.aspect = container.clientWidth / container.clientHeight;
+          camera.updateProjectionMatrix();
+          renderer.setSize(container.clientWidth, container.clientHeight);
+        });
+      }
+
+      function createCatTexture(baseColorHex, trimColorHex, patternType) {
+        const size = 512;
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        const baseColor = new THREE.Color(baseColorHex);
+        const trimColor = new THREE.Color(trimColorHex);
+
+        function drawFurNoise(ctx, color, density, opacity) {
+          ctx.fillStyle = color;
+          for (let i = 0; i < density; i++) {
+            const x = Math.random() * size;
+            const y = Math.random() * size;
+            const len = 2 + Math.random() * 4;
+            const angle = (Math.random() - 0.5) * 0.5;
+            ctx.globalAlpha = Math.random() * opacity;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + Math.sin(angle) * len, y + Math.cos(angle) * len);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 0.5 + Math.random();
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 1.0;
+        }
+
+        ctx.fillStyle = `#${baseColor.getHexString()}`;
+        ctx.fillRect(0, 0, size, size);
+
+        drawFurNoise(ctx, "#000000", 20000, 0.1);
+        drawFurNoise(ctx, "#ffffff", 20000, 0.1);
+
+        if (patternType === "stripe") {
+          const cHex = `#${trimColor.getHexString()}`;
+          for (let i = 0; i < 15; i++) {
+            const basePathY = i * (size / 12);
+            for (let x = 0; x < size; x += 2) {
+              const yOffset = Math.sin(x * 0.02 + i) * 30 + Math.random() * 5;
+              const width = 10 + Math.sin(x * 0.05) * 5;
+              if (Math.random() > 0.3) {
+                ctx.strokeStyle = cHex;
+                ctx.globalAlpha = 0.6 + Math.random() * 0.4;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                const furY =
+                  basePathY + yOffset + (Math.random() - 0.5) * width;
+                ctx.moveTo(x, furY);
+                ctx.lineTo(
+                  x + (Math.random() - 0.5) * 2,
+                  furY + 5 + Math.random() * 5
+                );
+                ctx.stroke();
+              }
+            }
+          }
+        } else if (patternType === "sabi") {
+          const cHex = `#${trimColor.getHexString()}`;
+          for (let i = 0; i < 60; i++) {
+            const cx = Math.random() * size;
+            const cy = Math.random() * size;
+            const r = 20 + Math.random() * 50;
+            for (let j = 0; j < 300; j++) {
+              const ang = Math.random() * Math.PI * 2;
+              const dist = Math.random() * r;
+              const px = cx + Math.cos(ang) * dist;
+              const py = cy + Math.sin(ang) * dist;
+              ctx.strokeStyle = cHex;
+              ctx.globalAlpha = 0.4 + Math.random() * 0.4;
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(px, py);
+              ctx.lineTo(px, py + 4 + Math.random() * 4);
+              ctx.stroke();
+            }
+          }
+        }
+
+        if (patternType !== "solid") {
+          drawFurNoise(ctx, `#${trimColor.getHexString()}`, 5000, 0.05);
+        }
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(1, 1);
+        return texture;
+      }
+      // --- 強化された猫モデルクラス ---
+      class Cat {
+        constructor(data, isPlayer, startZ) {
+          this.data = data;
+          this.isPlayer = isPlayer;
+          this.maxHp = 100 * data.hpMulti;
+          this.hp = this.maxHp;
+          this.maxGauge = 100;
+          this.gauge = 0;
+          this.beamCount = 3;
+          this.state = "idle";
+          this.timer = 0;
+          this.vy = 0;
+          this.groundY = 0;
+          this.invincible = 0;
+          this.hasHit = false;
+          this.dashVec = new THREE.Vector3();
+          this.comboReady = false;
+          this.forceApproach = false;
+          this.consecutiveShots = 0;
+
+          // ★追加: 鳴き声のタイマー
+          this.meowTimer = Math.random() * 5 + 3;
+
+          // コンテナ: 移動用
+          this.mesh = new THREE.Group();
+          this.mesh.position.set(0, 0, startZ);
+
+          // コンテナ: モデルの向き補正用
+          this.modelGroup = new THREE.Group();
+          this.modelGroup.rotation.y = Math.PI;
+          this.mesh.add(this.modelGroup);
+
+          // Materials
+          const texture = createCatTexture(data.color, data.trim, data.pattern);
+          const bodyMat = new THREE.MeshStandardMaterial({
+            map: texture,
+            roughness: 0.6,
+            metalness: 0.1,
+          });
+          const trimMat = new THREE.MeshStandardMaterial({
+            color: data.trim,
+            roughness: 0.8,
+          });
+          const eyeColorMat = new THREE.MeshBasicMaterial({ color: data.eye });
+          const pupilMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+          const socksMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            roughness: 0.8,
+          });
+          const noseMat = new THREE.MeshStandardMaterial({
+            color: 0xffaaaa,
+            roughness: 0.5,
+          });
+          const whiskerMat = new THREE.LineBasicMaterial({
+            color: 0xcccccc,
+            transparent: true,
+            opacity: 0.6,
+          });
+
+          // --- リアル化: ジオメトリの変更 ---
+          // BoxGeometryの代わりに、SphereやCylinderを使って有機的な形を作る
+
+          // 腰 (Hips) - 骨盤周り
+          this.hips = new THREE.Group();
+          this.hips.position.y = 0.55;
+          this.modelGroup.add(this.hips);
+
+          // お腹 (Abdomen) - 少し太めの円柱または球
+          // SphereGeometry(radius, widthSegments, heightSegments)
+          const abdomenGeo = new THREE.SphereGeometry(0.28, 16, 12);
+          abdomenGeo.scale(1, 0.9, 1.2); // 楕円にする
+          this.abdomen = new THREE.Mesh(abdomenGeo, bodyMat);
+          this.abdomen.position.z = 0.2;
+          this.abdomen.castShadow = true;
+          this.hips.add(this.abdomen);
+
+          // 胸 (Chest) - お腹より少し大きい
+          const chestGeo = new THREE.SphereGeometry(0.32, 16, 12);
+          chestGeo.scale(1, 0.95, 1.1);
+          this.chest = new THREE.Mesh(chestGeo, bodyMat);
+          this.chest.position.set(0, 0.05, -0.45);
+          this.chest.castShadow = true;
+          this.abdomen.add(this.chest);
+
+          // 頭 (Head) - 球体をベースに
+          this.headGroup = new THREE.Group();
+          this.headGroup.position.set(0, 0.25, -0.4);
+          this.chest.add(this.headGroup);
+
+          const headGeo = new THREE.SphereGeometry(0.24, 16, 16);
+          headGeo.scale(1.1, 0.9, 1.0); // 少し平たく
+          this.head = new THREE.Mesh(headGeo, bodyMat);
+          this.headGroup.add(this.head);
+
+          // マズル (Muzzle) - 小さな球か円柱
+          const muzzleGeo = new THREE.SphereGeometry(0.12, 12, 8);
+          muzzleGeo.scale(1, 0.8, 1);
+          const muzzle = new THREE.Mesh(muzzleGeo, trimMat);
+          muzzle.position.set(0, -0.08, -0.18);
+          this.head.add(muzzle);
+
+          // 鼻 (Nose) - 三角形
+          const noseGeo = new THREE.ConeGeometry(0.03, 0.05, 3);
+          const nose = new THREE.Mesh(noseGeo, noseMat);
+          nose.rotation.x = -Math.PI / 2;
+          nose.rotation.z = Math.PI;
+          nose.position.set(0, 0.08, -0.1);
+          muzzle.add(nose);
+
+          // ひげ (Whiskers) - ラインで表現
+          const whiskerGroup = new THREE.Group();
+          muzzle.add(whiskerGroup);
+          for (let i = 0; i < 6; i++) {
+            const isRight = i < 3;
+            const points = [
+              new THREE.Vector3(0, 0, 0),
+              new THREE.Vector3(isRight ? 0.3 : -0.3, (i % 3) * 0.05 - 0.05, 0),
+            ];
+            const wGeo = new THREE.BufferGeometry().setFromPoints(points);
+            const whisker = new THREE.Line(wGeo, whiskerMat);
+            whisker.position.set(isRight ? 0.05 : -0.05, 0, -0.05);
+            whiskerGroup.add(whisker);
+          }
+
+          // Eyes - 少しリアルな配置
+          const eyeGeo = new THREE.SphereGeometry(0.06, 12, 8);
+          eyeGeo.scale(1, 1, 0.5); // 扁平にする
+
+          const eyeLGroup = new THREE.Group();
+          eyeLGroup.position.set(-0.1, 0.02, -0.18);
+          eyeLGroup.rotation.y = -0.3;
+          this.head.add(eyeLGroup);
+          const eyeL = new THREE.Mesh(eyeGeo, eyeColorMat);
+          eyeLGroup.add(eyeL);
+
+          const pupilGeo = new THREE.SphereGeometry(0.03, 8, 8);
+          pupilGeo.scale(0.5, 1, 0.2);
+          const pupilL = new THREE.Mesh(pupilGeo, pupilMat);
+          pupilL.position.z = -0.05;
+          eyeL.add(pupilL);
+
+          const eyeRGroup = new THREE.Group();
+          eyeRGroup.position.set(0.1, 0.02, -0.18);
+          eyeRGroup.rotation.y = 0.3;
+          this.head.add(eyeRGroup);
+          const eyeR = new THREE.Mesh(eyeGeo, eyeColorMat);
+          eyeRGroup.add(eyeR);
+          const pupilR = new THREE.Mesh(pupilGeo, pupilMat);
+          pupilR.position.z = -0.05;
+          eyeR.add(pupilR);
+
+          // Ears - 三角錐だが、位置を調整
+          const earGeo = new THREE.ConeGeometry(0.08, 0.2, 4);
+          const earL = new THREE.Mesh(earGeo, bodyMat);
+          earL.position.set(-0.15, 0.2, -0.05);
+          earL.rotation.z = 0.3;
+          earL.rotation.y = -0.2;
+          earL.rotation.x = -0.2;
+          this.head.add(earL);
+
+          const earR = new THREE.Mesh(earGeo, bodyMat);
+          earR.position.set(0.15, 0.2, -0.05);
+          earR.rotation.z = -0.3;
+          earR.rotation.y = 0.2;
+          earR.rotation.x = -0.2;
+          this.head.add(earR);
+
+          // Tail - 球の連なりで滑らかに
+          this.tail = [];
+          let parent = this.abdomen;
+          for (let i = 0; i < 5; i++) {
+            // セグメント数を増やして滑らかに
+            const tGroup = new THREE.Group();
+            // 接続位置調整
+            if (i === 0) tGroup.position.set(0, 0.15, 0.35);
+            else tGroup.position.set(0, 0, 0.18);
+
+            // Sphere or Cylinder
+            const tSize = 0.08 - i * 0.01;
+            const tGeo = new THREE.CylinderGeometry(tSize, tSize * 0.8, 0.2, 8);
+            tGeo.rotateX(Math.PI / 2);
+            const tMesh = new THREE.Mesh(tGeo, bodyMat);
+            tMesh.position.z = 0.1; // pivot offset
+            tGroup.add(tMesh);
+            parent.add(tGroup);
+            this.tail.push(tGroup);
+            parent = tGroup;
+          }
+
+          // Legs - 円柱 (Cylinder) に変更
+          this.legs = [];
+          const legData = [
+            { pos: [-0.22, -0.1, -0.3], parent: this.chest, isFront: true },
+            { pos: [0.22, -0.1, -0.3], parent: this.chest, isFront: true },
+            { pos: [-0.2, -0.1, 0.2], parent: this.abdomen, isFront: false },
+            { pos: [0.2, -0.1, 0.2], parent: this.abdomen, isFront: false },
+          ];
+
+          legData.forEach((d) => {
+            const lGroup = new THREE.Group();
+            lGroup.position.set(d.pos[0], d.pos[1], d.pos[2]);
+            d.parent.add(lGroup);
+
+            // 太もも/上腕
+            const upperGeo = new THREE.CylinderGeometry(0.1, 0.07, 0.35, 8);
+            const upper = new THREE.Mesh(upperGeo, bodyMat);
+            upper.position.y = -0.15;
+            lGroup.add(upper);
+
+            const knee = new THREE.Group();
+            knee.position.y = -0.3;
+            upper.add(knee);
+
+            // すね/前腕
+            const lowerGeo = new THREE.CylinderGeometry(0.06, 0.05, 0.3, 8);
+            const lower = new THREE.Mesh(lowerGeo, trimMat);
+            lower.position.y = -0.15;
+            if (!d.isFront) lower.rotation.x = 0.5; // 後ろ足の関節角度
+            knee.add(lower);
+
+            // 足先 (Paw) - 少し丸く
+            const pawGeo = new THREE.CylinderGeometry(0.06, 0.08, 0.1, 8);
+            pawGeo.rotateX(Math.PI / 2); // 横倒し
+            const paw = new THREE.Mesh(pawGeo, data.socks ? socksMat : trimMat);
+            paw.scale.set(1, 1, 1.5); // 前後に長く
+            paw.position.set(0, -0.15, 0.05);
+            if (!d.isFront) paw.rotation.x = -0.5;
+            lower.add(paw);
+
+            this.legs.push({ root: lGroup, knee: knee, isFront: d.isFront });
+          });
+
+          scene.add(this.mesh);
+        }
+
+        // 更新処理 (フレームごと)
+        update(dt) {
+          // 無敵時間処理 (点滅)
+          if (this.invincible > 0) {
+            this.invincible -= dt;
+            this.mesh.visible = Math.floor(this.invincible * 20) % 2 === 0;
+          } else {
+            this.mesh.visible = true;
+          }
+
+          // ★追加: ランダムで鳴く処理
+          if (this.meowTimer > 0) {
+            this.meowTimer -= dt;
+            if (this.meowTimer <= 0) {
+              if (Math.random() < 0.4) {
+                // 40%の確率で鳴く
+                AudioSys.meow();
+              }
+              this.meowTimer = Math.random() * 8 + 4; // 次の判定まで4~12秒
+            }
+          }
+
+          // 重力と着地
+          if (this.mesh.position.y > this.groundY || this.vy > 0) {
+            this.vy -= 20 * dt;
+            this.mesh.position.y += this.vy * dt;
+            if (this.mesh.position.y <= this.groundY) {
+              this.mesh.position.y = this.groundY;
+              this.vy = 0;
+
+              // stateがジャンプ系なら着地処理
+              if (this.state === "jump") {
+                this.toState("idle");
+              } else if (this.state === "jump_attack") {
+                // ★修正: ジャンプ攻撃後は着地硬直へ移行
+                this.toState("land_lag");
+              } else if (this.state === "dive") {
+                this.toState("land_lag");
+              }
+            }
+          }
+
+          // 地面より下にいかないようにクランプ
+          if (this.mesh.position.y < this.groundY) {
+            this.mesh.position.y = this.groundY;
+            this.vy = 0;
+            if (["jump", "dive", "jump_attack"].includes(this.state)) {
+              if (this.state === "jump") this.toState("idle");
+              else this.toState("land_lag"); // ダイブ/ジャンプ攻撃は硬直あり
+            }
+          }
+
+          // タイマー処理 (アクションの継続時間など)
+          if (this.timer > 0) {
+            this.timer -= dt;
+            if (this.timer <= 0) {
+              // ★修正: 'guard' もタイマー終了でidleに戻る対象に追加 (AI用)
+              if (
+                [
+                  "attack",
+                  "special",
+                  "hit",
+                  "dash",
+                  "dive",
+                  "jump_attack",
+                  "ultimate",
+                  "land_lag",
+                  "guard",
+                ].includes(this.state)
+              ) {
+                this.toState("idle");
+              }
+            }
+          }
+
+          // ダッシュ・ダイブの座標移動
+          if (this.state === "dash") {
+            this.mesh.position.add(this.dashVec.clone().multiplyScalar(dt));
+            if (Math.random() < 0.3)
+              spawnParticles(this.mesh.position, 0xffffff);
+          } else if (this.state === "dive") {
+            const diveSpeed = 15.0;
+            const dir = this.target.mesh.position
+              .clone()
+              .sub(this.mesh.position)
+              .normalize();
+            dir.y = -1.0;
+            this.mesh.position.add(dir.multiplyScalar(diveSpeed * dt));
+          }
+
+          const t = clock.elapsedTime * 10;
+          this.mesh.rotation.y =
+            this.target && this.state !== "special" && this.state !== "ultimate"
+              ? 0
+              : this.mesh.rotation.y;
+
+          // ★修正箇所: アニメーションの基本姿勢リセットを完全に行う
+          this.hips.position.set(0, 0.55, 0);
+
+          this.hips.rotation.z = 0;
+          this.abdomen.rotation.x = 0;
+          this.chest.rotation.x = 0;
+
+          if (this.state === "run") {
+            this.hips.position.y = 0.55 + Math.sin(t * 2) * 0.05;
+            this.abdomen.rotation.x = Math.sin(t * 1.5) * 0.1;
+            this.legs.forEach((l, i) => {
+              const offset = i % 2 === 0 ? 0 : Math.PI;
+              l.root.rotation.x = Math.sin(t + offset) * 0.8;
+              l.knee.rotation.x = Math.abs(Math.sin(t + offset)) * 1.0;
+            });
+            this.tail.forEach(
+              (seg, i) => (seg.rotation.y = Math.sin(t * 0.8 - i) * 0.3)
+            );
+          } else if (this.state === "idle") {
+            this.hips.position.y = 0.55 + Math.sin(t * 0.5) * 0.02;
+            this.legs.forEach((l) => {
+              l.root.rotation.x = 0;
+              l.knee.rotation.x = l.isFront ? 0 : 0.2;
+            });
+            this.tail.forEach(
+              (seg, i) => (seg.rotation.y = Math.sin(t * 0.2 - i) * 0.1)
+            );
+          } else if (this.state === "attack") {
+            // ★修正箇所: 攻撃時の踏み込みを「加算」ではなく「一時的なオフセット」に変更
+            const lungAmount = Math.sin(Math.PI * (1 - this.timer / 0.3)) * 0.2;
+            this.hips.position.z += lungAmount;
+
+            this.chest.rotation.x = -0.2;
+            this.legs[1].root.rotation.x =
+              -1.0 * Math.sin(Math.PI * (1 - this.timer / 0.3));
+          } else if (this.state === "special") {
+            this.mesh.rotation.y += 0.5;
+            this.tail.forEach((seg) => (seg.rotation.x = 0.5));
+          } else if (this.state === "dash") {
+            this.hips.position.y = 0.4;
+            this.legs.forEach((l) => (l.root.rotation.x = 1.0));
+          } else if (this.state === "guard") {
+            this.chest.rotation.x = 0.3;
+            this.headGroup.rotation.x = 0.2;
+          } else if (this.state === "jump" || this.state === "jump_attack") {
+            this.legs.forEach((l) => {
+              l.root.rotation.x = 0.5;
+              l.knee.rotation.x = -1.0;
+            });
+          } else if (this.state === "dive") {
+            this.modelGroup.rotation.x = 0.5;
+            this.legs[1].root.rotation.x = -1.5;
+          } else if (this.state === "land_lag") {
+            // 着地硬直: 少し沈み込む
+            this.hips.position.y = 0.4;
+            this.legs.forEach((l) => {
+              l.root.rotation.x = 0.5;
+              l.knee.rotation.x = 0.8;
+            });
+          } else if (this.state === "ultimate") {
+            this.mesh.rotation.y += 1.0;
+            this.mesh.scale.setScalar(1.0 + Math.sin(t * 5) * 0.2);
+          }
+
+          if (this.state !== "ultimate") this.mesh.scale.setScalar(1);
+          if (this.state !== "dive") this.modelGroup.rotation.x = 0;
+
+          if (
+            ["special", "ultimate", "jump_attack", "dive", "land_lag"].includes(
+              this.state
+            )
+          ) {
+            // これらの状態では向き補正しない
+          } else {
+            if (this.target) {
+              const targetPos = this.target.mesh.position.clone();
+              targetPos.y = this.mesh.position.y;
+              this.mesh.lookAt(targetPos);
+            }
+          }
+          if (this.mesh.position.length() > 20)
+            this.mesh.position.setLength(20);
+        }
+
+        // 状態遷移
+        toState(s) {
+          this.state = s;
+          if (s === "attack") {
+            this.timer = 0.3;
+            this.hasHit = false;
+            AudioSys.swing();
+          } else if (s === "special") {
+            if (!this.data.infiniteBeams) {
+              if (this.beamCount > 0) this.beamCount--;
+            }
+            this.timer = 0.8;
+            this.hasHit = false;
+            this.vy = 5;
+            AudioSys.swing();
+          } else if (s === "jump") {
+            this.vy = 15;
+            AudioSys.jump();
+            this.hasHit = false;
+          } else if (s === "hit") {
+            this.timer = 0.4;
+          } else if (s === "dash") {
+            this.timer = 0.2;
+            this.vy = 0;
+            AudioSys.dash();
+          } else if (s === "guard") {
+            // ★修正: AIの場合は時間経過でガード解除 (例: 0.5秒〜1.0秒)
+            // プレイヤー(isPlayer)は0にしておき、ボタン離しで解除するロジックに任せる
+            this.timer = this.isPlayer ? 0 : 0.5 + Math.random() * 0.5;
+          } else if (s === "jump_attack") {
+            this.timer = 0.4;
+            this.hasHit = false;
+            AudioSys.swing();
+          } else if (s === "dive") {
+            this.timer = 1.0;
+            this.hasHit = false;
+            this.vy = 0;
+            AudioSys.swing();
+          } else if (s === "land_lag") {
+            this.timer = 0.5; // 着地硬直時間 (0.5秒)
+            this.hasHit = false;
+          } else if (s === "ultimate") {
+            this.timer = 1.5;
+            this.hasHit = false;
+            this.gauge = 0;
+            AudioSys.ultimate();
+            spawnParticles(this.mesh.position, 0xff00ff);
+          }
+        }
+
+        takeDamage(amount) {
+          if (this.invincible > 0) return;
+
+          if (this.state === "guard") {
+            amount *= 0.2;
+            this.gauge += 5;
+
+            // ★修正: ゲージMAXでビーム補充 (プレイヤーのみ)
+            if (this.gauge >= this.maxGauge) {
+              this.gauge = this.maxGauge;
+              if (this.isPlayer && this.beamCount < 3) {
+                this.beamCount = 3;
+                // 補充音 or エフェクト (AudioSysにreloadがあれば呼ぶが、無いのでcharge等を代用検討、今回は割愛または既存音)
+              }
+            }
+
+            spawnParticles(this.mesh.position, 0x0088ff);
+            this.hp -= amount;
+            updateHUD();
+            if (this.hp <= 0) {
+              this.hp = 0;
+              endRound(this.isPlayer);
+            }
+            return;
+          }
+
+          this.hp -= amount;
+          this.gauge += 10;
+          // ★追加: ダメージを受けた時に悲鳴（鳴き声）
+          AudioSys.meow(true);
+
+          // ★修正: ゲージMAXでビーム補充 (プレイヤーのみ)
+          if (this.gauge >= this.maxGauge) {
+            this.gauge = this.maxGauge;
+            if (this.isPlayer && this.beamCount < 3) {
+              this.beamCount = 3;
+            }
+          }
+
+          if (this.gauge > this.maxGauge) this.gauge = this.maxGauge;
+          this.invincible = 1.0;
+          this.toState("hit");
+          const dir = this.mesh.position.clone().sub(this.target.mesh.position);
+          dir.y = 0;
+          dir.normalize();
+          this.mesh.position.add(dir.multiplyScalar(2));
+          this.mesh.position.y = Math.max(this.mesh.position.y, 0.5);
+          spawnParticles(this.mesh.position, 0xff0000);
+          AudioSys.hit();
+          updateHUD();
+          if (this.hp <= 0) {
+            this.hp = 0;
+            endRound(this.isPlayer);
+          }
+        }
+      }
+
+      // 飛び道具クラス
+      class Projectile {
+        constructor(owner) {
+          this.owner = owner;
+          const geo = new THREE.CylinderGeometry(0.2, 0.2, 2, 8);
+          geo.rotateX(Math.PI / 2);
+          this.mesh = new THREE.Mesh(
+            geo,
+            new THREE.MeshBasicMaterial({ color: 0x00ffff })
+          );
+          this.mesh.position.copy(owner.mesh.position);
+          this.mesh.position.y = 1.0;
+          this.mesh.lookAt(
+            owner.target.mesh.position.x,
+            1.0,
+            owner.target.mesh.position.z
+          );
+          this.dir = new THREE.Vector3(0, 0, 1).applyQuaternion(
+            this.mesh.quaternion
+          );
+          this.speed = 15;
+          this.life = 2.0;
+          scene.add(this.mesh);
+        }
+        update(dt) {
+          this.life -= dt;
+          this.mesh.position.add(
+            this.dir.clone().multiplyScalar(this.speed * dt)
+          );
+          const targetPos = this.owner.target.mesh.position;
+          const dx = this.mesh.position.x - targetPos.x;
+          const dz = this.mesh.position.z - targetPos.z;
+          const distXZ = Math.sqrt(dx * dx + dz * dz);
+          const isJumpDodged = targetPos.y > 1.3;
+          if (distXZ < 1.5 && !isJumpDodged) {
+            this.owner.target.takeDamage(15);
+            this.life = 0;
+          }
+          if (this.life <= 0) {
+            scene.remove(this.mesh);
+            return false;
+          }
+          return true;
+        }
+      }
+
+      function spawnParticles(pos, color) {
+        const mat = new THREE.MeshBasicMaterial({ color: color });
+        const geo = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+        for (let i = 0; i < 8; i++) {
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.position.copy(pos);
+          mesh.position.y += 0.5;
+          scene.add(mesh);
+          particles.push({
+            mesh: mesh,
+            vel: new THREE.Vector3(
+              Math.random() - 0.5,
+              Math.random(),
+              Math.random() - 0.5
+            ).multiplyScalar(0.2),
+            life: 1.0,
+          });
+        }
+      }
+
+      let inputLock = {
+        attack: false,
+        special: false,
+        ultimate: false,
+        jump: false,
+        dash: false,
+        guard: false,
+      };
+
+      function resolveCollision(c1, c2) {
+        const p1 = c1.mesh.position;
+        const p2 = c2.mesh.position;
+
+        const dx = p1.x - p2.x;
+        const dz = p1.z - p2.z;
+        const distSq = dx * dx + dz * dz;
+        const minDist = 1.5;
+
+        const dy = Math.abs(p1.y - p2.y);
+
+        if (distSq < minDist * minDist && dy < 2.0) {
+          const dist = Math.sqrt(distSq);
+          const overlap = minDist - dist;
+          const nx = dist > 0.01 ? dx / dist : 1;
+          const nz = dist > 0.01 ? dz / dist : 0;
+
+          const pushX = nx * overlap * 0.5;
+          const pushZ = nz * overlap * 0.5;
+
+          c1.mesh.position.x += pushX;
+          c1.mesh.position.z += pushZ;
+          c2.mesh.position.x -= pushX;
+          c2.mesh.position.z -= pushZ;
+        }
+      }
+
+      // ゲームのメインループ更新
+      function updateGame(dt) {
+        Input.update();
+        // 入力ロックの解除制御
+        if (!Input.attack) inputLock.attack = false;
+        if (!Input.special) inputLock.special = false;
+        if (!Input.ultimate) inputLock.ultimate = false;
+        if (!Input.jump) inputLock.jump = false;
+        if (!Input.dash) inputLock.dash = false;
+
+        // ガード解除
+        if (player.state === "guard" && !Input.guard) {
+          player.state = "idle";
+        }
+        const canAct =
+          player.state === "idle" ||
+          player.state === "run" ||
+          player.state === "guard";
+
+        // プレイヤーの移動制御
+        if (
+          player.state === "idle" ||
+          player.state === "run" ||
+          player.state === "jump"
+        ) {
+          const speed = 6.0 * player.data.speed;
+          let moving = false;
+          const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(
+            camera.quaternion
+          );
+          fwd.y = 0;
+          fwd.normalize();
+          const right = new THREE.Vector3(1, 0, 0).applyQuaternion(
+            camera.quaternion
+          );
+          right.y = 0;
+          right.normalize();
+
+          // スティック/キー入力がある場合
+          if (Math.abs(Input.y) > 0.1 || Math.abs(Input.x) > 0.1) {
+            const moveDir = fwd
+              .clone()
+              .multiplyScalar(-Input.y)
+              .add(right.clone().multiplyScalar(Input.x));
+
+            // ダッシュ (Shift/ボタン)
+            if (
+              Input.dash &&
+              !inputLock.dash &&
+              player.gauge >= 10 &&
+              player.state !== "dash" &&
+              player.state !== "jump"
+            ) {
+              inputLock.dash = true;
+              player.toState("dash");
+              player.gauge -= 10;
+              let dDir = moveDir.clone();
+              if (dDir.lengthSq() === 0) {
+                dDir = new THREE.Vector3(0, 0, 1).applyQuaternion(
+                  player.mesh.quaternion
+                );
+              }
+              dDir.normalize().multiplyScalar(speed * 8);
+              player.dashVec.copy(dDir);
+            } else {
+              // 通常移動
+              player.mesh.position.add(moveDir.multiplyScalar(speed * dt));
+              moving = true;
+            }
+          }
+          if (player.state === "idle" && moving) player.state = "run";
+          if (player.state === "run" && !moving) player.state = "idle";
+        }
+
+        // プレイヤーのアクション入力
+        if (
+          Input.ultimate &&
+          !inputLock.ultimate &&
+          player.gauge >= 100 &&
+          canAct
+        ) {
+          inputLock.ultimate = true;
+          player.toState("ultimate");
+        } else if (
+          Input.special &&
+          !inputLock.special &&
+          canAct &&
+          player.beamCount > 0
+        ) {
+          inputLock.special = true;
+          player.toState("special");
+          projectiles.push(new Projectile(player));
+          AudioSys.beam();
+        } else if (Input.attack && !inputLock.attack) {
+          if (player.state === "jump") {
+            if (!player.hasHit) {
+              inputLock.attack = true;
+              player.toState("dive");
+            }
+          } else if (canAct) {
+            inputLock.attack = true;
+            player.toState("attack");
+          }
+        } else if (Input.guard && canAct) {
+          if (player.state !== "guard") player.toState("guard");
+        } else if (
+          Input.jump &&
+          !inputLock.jump &&
+          canAct &&
+          player.mesh.position.y <= 0.1
+        ) {
+          inputLock.jump = true;
+          player.toState("jump");
+        }
+
+        // AI ロジック (敵の頭脳)
+        if (enemy.state === "idle" || enemy.state === "run") {
+          if (enemy.comboReady && enemy.state === "idle") {
+            if (enemy.beamCount > 0 || enemy.data.infiniteBeams) {
+              enemy.toState("special");
+              projectiles.push(new Projectile(enemy));
+              AudioSys.beam();
+              enemy.comboReady = false;
+              return;
+            }
+            enemy.comboReady = false;
+          }
+          const dist = enemy.mesh.position.distanceTo(player.mesh.position);
+          const aiLevel = enemy.data.aiLevel || 1;
+          const isBossTier = aiLevel >= 9;
+
+          // 強制接近モード
+          if (enemy.forceApproach) {
+            if (dist < 2.0) {
+              enemy.forceApproach = false;
+              enemy.consecutiveShots = 0;
+            } else {
+              const dir = player.mesh.position
+                .clone()
+                .sub(enemy.mesh.position)
+                .normalize();
+              enemy.mesh.position.add(
+                dir.multiplyScalar(enemy.data.speed * 4 * dt)
+              );
+              enemy.state = "run";
+            }
+          }
+
+          // ★対空意識の追加: プレイヤーが飛んでいる場合
+          let reactingToJump = false;
+          if (
+            (player.state === "jump" ||
+              player.state === "jump_attack" ||
+              player.state === "dive") &&
+            aiLevel >= 3
+          ) {
+            // プレイヤーが飛んできたら
+            const jumpReactionChance = 0.1 + aiLevel * 0.05; // レベルが高いほど反応
+            if (Math.random() < jumpReactionChance && dist < 5.0) {
+              reactingToJump = true;
+              // 下がってスカす、またはガード
+              if (enemy.gauge >= 10 && Math.random() < 0.5) {
+                // バックダッシュ
+                const backDir = enemy.mesh.position
+                  .clone()
+                  .sub(player.mesh.position)
+                  .normalize();
+                enemy.dashVec.copy(
+                  backDir.multiplyScalar(enemy.data.speed * 8)
+                );
+                enemy.toState("dash");
+                enemy.gauge -= 10;
+              } else {
+                // ガード待機 (次のフレームで攻撃が来たら防げるように)
+                enemy.toState("guard");
+              }
+            }
+          }
+
+          if (!enemy.forceApproach && !reactingToJump) {
+            let dir = player.mesh.position
+              .clone()
+              .sub(enemy.mesh.position)
+              .normalize();
+            if (aiLevel >= 2) {
+              // 揺らぎ移動
+              const side = new THREE.Vector3(dir.z, 0, -dir.x);
+              const sway =
+                Math.sin(clock.getElapsedTime() * 2.0 + aiLevel) * 0.8;
+              dir.add(side.multiplyScalar(sway * 0.5)).normalize();
+            }
+            let defensiveAction = false;
+
+            // 防御行動判定
+            // 1. ダッシュやダイブなどに対する回避
+            if (
+              aiLevel >= 4 &&
+              (player.state === "attack" ||
+                player.state === "special" ||
+                player.state === "dive" ||
+                player.state === "dash")
+            ) {
+              // ★Lv4修正: 通常攻撃に対してもガードを行う
+              if (player.state === "attack" && dist < 2.5) {
+                const blockChance = 0.3 + (aiLevel - 4) * 0.1; // Lv4=30%, Lv5=40%, ... Lv10=90%
+                if (Math.random() < blockChance) {
+                  enemy.toState("guard");
+                  defensiveAction = true;
+                }
+              }
+
+              // 既存の回避ロジック
+              if (!defensiveAction && dist < 4.5) {
+                const reactProb = 0.2 + aiLevel * 0.1;
+                if (Math.random() < reactProb) {
+                  if (aiLevel >= 6 && Math.random() < 0.6 && enemy.gauge > 10) {
+                    // 回避ダッシュ
+                    const dodgeDir = new THREE.Vector3(
+                      dir.z,
+                      0,
+                      -dir.x
+                    ).multiplyScalar(Math.random() < 0.5 ? 1 : -1);
+                    if (Math.random() < 0.3) dodgeDir.copy(dir).negate();
+                    enemy.dashVec.copy(
+                      dodgeDir.normalize().multiplyScalar(enemy.data.speed * 48)
+                    );
+                    enemy.toState("dash");
+                    enemy.gauge -= 10;
+                    if (
+                      aiLevel >= 7 &&
+                      (enemy.beamCount > 0 || enemy.data.infiniteBeams) &&
+                      Math.random() < 0.7
+                    ) {
+                      enemy.comboReady = true;
+                    }
+                    defensiveAction = true;
+                  } else {
+                    // 通常移動回避
+                    const side = new THREE.Vector3(
+                      dir.z,
+                      0,
+                      -dir.x
+                    ).multiplyScalar(Math.random() < 0.5 ? 1 : -1);
+                    dir.negate().add(side.multiplyScalar(0.8)).normalize();
+                    enemy.mesh.position.add(
+                      dir.multiplyScalar(enemy.data.speed * 6 * dt)
+                    );
+                    defensiveAction = true;
+                  }
+                }
+              }
+            }
+
+            // 攻撃行動判定
+            if (!defensiveAction) {
+              let aggression = 0.01 + aiLevel * 0.005;
+              if (isBossTier) aggression *= 1.5;
+              if (aiLevel >= 7 && dist < 1.5 && Math.random() < 0.05) {
+                dir.negate();
+              } // フェイント
+
+              // ★Lv5修正: 戦略的後退 (ビームを撃つために距離を取る)
+              if (
+                aiLevel >= 5 &&
+                (enemy.beamCount > 0 || enemy.data.infiniteBeams) &&
+                dist < 6.0 &&
+                dist > 2.5
+              ) {
+                // 30%の確率で少し下がる
+                if (Math.random() < 0.02) {
+                  // 毎フレーム抽選なので低確率にする
+                  dir.negate();
+                }
+              }
+
+              if (Math.random() < aggression) {
+                // 遠距離攻撃
+                const beamRangeTrigger = isBossTier ? 4.0 : 3.0; // ボスは遠くても撃つ
+                if (
+                  (dist > beamRangeTrigger || (aiLevel >= 5 && dist > 3.0)) &&
+                  !enemy.forceApproach
+                ) {
+                  // Lv5以上なら積極的にビームを使う
+                  let shootProb = 0.3;
+                  if (aiLevel >= 5 && enemy.beamCount > 0) shootProb = 0.6;
+
+                  if (enemy.consecutiveShots < 3 && Math.random() < shootProb) {
+                    enemy.toState("special");
+                    projectiles.push(new Projectile(enemy));
+                    AudioSys.beam();
+                    enemy.consecutiveShots++;
+                    if (enemy.consecutiveShots >= 3) enemy.forceApproach = true;
+                    return;
+                  }
+                }
+                if (dist > 2.2) {
+                  if (
+                    isBossTier &&
+                    !enemy.forceApproach &&
+                    enemy.consecutiveShots < 3 &&
+                    Math.random() < 0.3
+                  ) {
+                    enemy.toState("special");
+                    projectiles.push(new Projectile(enemy));
+                    AudioSys.beam();
+                    enemy.consecutiveShots++;
+                    if (enemy.consecutiveShots >= 3) enemy.forceApproach = true;
+                  } else {
+                    // 接近
+                    enemy.mesh.position.add(
+                      dir.multiplyScalar(enemy.data.speed * 4 * dt)
+                    );
+                    enemy.state = "run";
+                  }
+                } else {
+                  // 近接戦闘
+                  const roll = Math.random();
+                  if (roll < 0.6) enemy.toState("attack");
+                  else if (
+                    roll < 0.75 &&
+                    (enemy.beamCount > 0 || enemy.data.infiniteBeams) &&
+                    aiLevel > 2
+                  ) {
+                    enemy.toState("special");
+                    projectiles.push(new Projectile(enemy));
+                    AudioSys.beam();
+                  } else if (roll < 0.85 && enemy.gauge >= 100 && aiLevel > 5)
+                    enemy.toState("ultimate");
+                  else enemy.toState("jump");
+                }
+              } else {
+                // 位置調整
+                if (dist > 2.0 || (aiLevel >= 2 && dist > 1.5)) {
+                  enemy.mesh.position.add(
+                    dir.multiplyScalar(enemy.data.speed * 4 * dt)
+                  );
+                  enemy.state = "run";
+                } else {
+                  enemy.state = "idle";
+                }
+              }
+            }
+          }
+        }
+
+        player.update(dt);
+        enemy.update(dt);
+        resolveCollision(player, enemy);
+        checkHit(player, enemy);
+        checkHit(enemy, player);
+
+        // 弾丸の更新
+        for (let i = projectiles.length - 1; i >= 0; i--) {
+          if (!projectiles[i].update(dt)) projectiles.splice(i, 1);
+        }
+        // パーティクルの更新
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const p = particles[i];
+          p.life -= dt * 2;
+          p.mesh.position.add(p.vel);
+          p.mesh.rotation.x += dt;
+          if (p.life <= 0) {
+            scene.remove(p.mesh);
+            particles.splice(i, 1);
+          }
+        }
+
+        // カメラ追従
+        const mid = player.mesh.position
+          .clone()
+          .add(enemy.mesh.position)
+          .multiplyScalar(0.5);
+        const dist = player.mesh.position.distanceTo(enemy.mesh.position);
+        const camTargetPos = new THREE.Vector3(
+          mid.x,
+          5 + dist * 0.3,
+          mid.z + 8 + dist * 0.5
+        );
+        camera.position.lerp(camTargetPos, 0.05);
+        camera.lookAt(mid);
+        updateHUD();
+      }
+
+      function checkHit(atk, def) {
+        if (
+          (atk.state === "attack" ||
+            atk.state === "jump_attack" ||
+            atk.state === "ultimate" ||
+            atk.state === "dive") &&
+          !atk.hasHit
+        ) {
+          const dist = atk.mesh.position.distanceTo(def.mesh.position);
+          if (dist < 2.0) {
+            atk.hasHit = true;
+            let dmg = 8;
+            if (atk.state === "jump_attack") dmg = 12;
+            if (atk.state === "ultimate") dmg = 40;
+            if (atk.state === "dive") dmg = 15;
+            dmg *= atk.data.power;
+            def.takeDamage(dmg);
+          }
+        }
+      }
+
+      function startGame() {
+        AudioSys.init();
+        document.getElementById("title-screen").classList.add("hidden");
+        document.getElementById("select-screen").classList.remove("hidden");
+        const grid = document.getElementById("char-grid");
+        grid.innerHTML = "";
+        PLAYER_CATS.forEach((cat, i) => {
+          const d = document.createElement("div");
+          d.className = "char-card";
+          const spdPct = Math.min(100, cat.speed * 50);
+          const pwrPct = Math.min(100, cat.power * 50);
+          d.innerHTML = `
+                    <div class="char-preview-box" style="background:#${new THREE.Color(
+                      cat.color
+                    ).getHexString()}; border-color:#${new THREE.Color(
+            cat.trim
+          ).getHexString()};">
+                        <div style="width:100%; height:100%; border-radius:50%; box-shadow: inset 0 0 20px rgba(0,0,0,0.8);"></div>
+                        <div style="position:absolute; top:35%; left:20%; width:15px; height:10px; background:#${new THREE.Color(
+                          cat.eye
+                        ).getHexString()}; border-radius:50%; box-shadow:0 0 5px #${new THREE.Color(
+            cat.eye
+          ).getHexString()};"></div>
+                        <div style="position:absolute; top:35%; right:20%; width:15px; height:10px; background:#${new THREE.Color(
+                          cat.eye
+                        ).getHexString()}; border-radius:50%; box-shadow:0 0 5px #${new THREE.Color(
+            cat.eye
+          ).getHexString()};"></div>
+                    </div>
+                    <div class="char-name" style="color:#${new THREE.Color(
+                      cat.trim
+                    ).getHexString()}; text-shadow:0 0 5px #${new THREE.Color(
+            cat.trim
+          ).getHexString()}">${cat.name}</div>
+                    <div class="stat-row"><span class="stat-label">SPD</span><div class="stat-bar-bg"><div class="stat-bar-fill spd-fill" style="width:${spdPct}%"></div></div></div>
+                    <div class="stat-row"><span class="stat-label">PWR</span><div class="stat-bar-bg"><div class="stat-bar-fill pwr-fill" style="width:${pwrPct}%"></div></div></div>
+                `;
+          d.onclick = () => {
+            document
+              .querySelectorAll(".char-card")
+              .forEach((c) => c.classList.remove("active"));
+            d.classList.add("active");
+            setTimeout(() => {
+              playerIdx = i;
+              currentLevel = 0;
+              retryCredits = 3;
+              document.getElementById("select-screen").classList.add("hidden");
+              startMatch();
+            }, 500);
+          };
+          grid.appendChild(d);
+        });
+      }
+
+      function startMatch() {
+        if (player) {
+          scene.remove(player.mesh);
+          scene.remove(enemy.mesh);
+        }
+        projectiles.forEach((p) => scene.remove(p.mesh));
+        projectiles = [];
+        particles.forEach((p) => scene.remove(p.mesh));
+        particles = [];
+        Input.reset();
+        inputLock.attack = false;
+        inputLock.special = false;
+        inputLock.ultimate = false;
+        inputLock.jump = false;
+        inputLock.dash = false;
+
+        player = new Cat(PLAYER_CATS[playerIdx], true, 5);
+        const enemyData =
+          ENEMY_CATS[Math.min(currentLevel, ENEMY_CATS.length - 1)];
+
+        // ★Lv6以上でビーム弾数増加: Lv5までは3発、Lv6で5発、Lv7で7発... (3 + (lvl-5)*2)
+        enemy = new Cat(enemyData, false, -5);
+        if (!enemy.data.infiniteBeams) {
+          const currentEnemyLvl = enemy.data.aiLevel || 1;
+          if (currentEnemyLvl >= 6) {
+            enemy.beamCount = 3 + (currentEnemyLvl - 5) * 2;
+          }
+        }
+
+        player.target = enemy;
+        enemy.target = player;
+        document.getElementById("hud").style.display = "flex";
+        document.getElementById("controls-area").style.display = "flex";
+        document.getElementById("result-screen").classList.add("hidden");
+        document.getElementById("level-display").innerText =
+          "Lv." + (currentLevel + 1);
+        updateHUD();
+        currentState = GAME_STATE.FIGHT;
+      }
+
+      function updateHUD() {
+        const p1pct = (player.hp / player.maxHp) * 100;
+        const p2pct = (enemy.hp / enemy.maxHp) * 100;
+        document.getElementById("p1-hp").style.width = Math.max(0, p1pct) + "%";
+        document.getElementById("p2-hp").style.width = Math.max(0, p2pct) + "%";
+        document.getElementById("p1-gauge").style.width =
+          Math.min(100, player.gauge) + "%";
+        document.getElementById("p2-gauge").style.width =
+          Math.min(100, enemy.gauge) + "%";
+        document.getElementById("enemy-name").innerText = enemy.data.name;
+        const spBtn = document.getElementById("btn-sp");
+        spBtn.innerHTML = `SP<br>(X)<br><span style="font-size:10px; color:${
+          player.beamCount > 0 ? "#ffff00" : "#888"
+        }">Rem:${player.beamCount}</span>`;
+        if (player.beamCount <= 0) {
+          spBtn.classList.add("disabled");
+        } else {
+          spBtn.classList.remove("disabled");
+        }
+      }
+
+      function endRound(playerLost) {
+        currentState = GAME_STATE.END;
+        setTimeout(() => {
+          document.getElementById("hud").style.display = "none";
+          document.getElementById("controls-area").style.display = "none";
+          const scr = document.getElementById("result-screen");
+          scr.classList.remove("hidden");
+          if (playerLost) {
+            retryCredits--;
+            if (retryCredits > 0) {
+              document.getElementById("result-msg").innerText = "DEFEATED";
+              document.getElementById("result-msg").style.color = "#ff0055";
+              document.getElementById(
+                "retry-btn"
+              ).innerText = `RETRY (残り${retryCredits}回)`;
+              document.getElementById("retry-btn").onclick = startMatch;
+            } else {
+              document.getElementById("result-msg").innerText = "GAME OVER";
+              document.getElementById("result-msg").style.color = "#555";
+              document.getElementById("retry-btn").innerText = "TITLE";
+              document.getElementById("retry-btn").onclick = () => {
+                location.reload();
+              };
+            }
+          } else {
+            currentLevel++;
+            if (currentLevel >= ENEMY_CATS.length) {
+              document.getElementById("result-msg").innerText = "ALL CLEAR!!";
+              document.getElementById("result-msg").style.color = "#00ffff";
+              document.getElementById("retry-btn").innerText = "TITLE";
+              document.getElementById("retry-btn").onclick = () => {
+                location.reload();
+              };
+            } else {
+              document.getElementById("result-msg").innerText = "WIN!!";
+              document.getElementById("result-msg").style.color = "#00ffff";
+              document.getElementById("retry-btn").innerText = "NEXT STAGE";
+              document.getElementById("retry-btn").onclick = startMatch;
+            }
+          }
+        }, 1500);
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        const dt = clock.getDelta();
+        if (currentState === GAME_STATE.FIGHT) updateGame(dt);
+        renderer.render(scene, camera);
+      }
+      window.onload = function () {
+        init3D();
+        Input.init();
+        document.getElementById("start-btn").onclick = startGame;
+        document.getElementById("retry-btn").onclick = startMatch;
+        animate();
+      };
+    </script>
+
+    <!-- =========================================================
+     ▼▼▼ テストコード本体 ▼▼▼
+     ゲーム本体コードが定義したロジックを検証する
+     ========================================================= -->
+    <script>
+      /**
+       * テスト用ログ出力関数
+       * test-log <pre> にメッセージを書き出す。
+       */
+      function testLog(message) {
+        const logEl = document.getElementById("test-log");
+
+        // 先頭のコメント行を消す
+        if (logEl.textContent.startsWith("// テスト結果がここに流れます")) {
+          logEl.textContent = "";
+        }
+
+        logEl.textContent += message + "\n";
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      /**
+       * assert 用のヘルパー
+       * 条件が false の場合は例外を投げる。
+       */
+      function assertTrue(condition, message) {
+        if (!condition) {
+          throw new Error("ASSERT FAIL: " + (message || ""));
+        }
+      }
+
+      /**
+       * 数値比較用の assert (許容誤差付き)
+       * actual と expected が tolerance 以内に収まっていなければ例外を投げる。
+       * (許容範囲いらない気もするが一応。。。)
+       */
+      function assertApproxEqual(actual, expected, tolerance, message) {
+        if (Math.abs(actual - expected) > tolerance) {
+          throw new Error(
+            "ASSERT FAIL: " +
+              (message || "") +
+              " (actual=" +
+              actual +
+              ", expected=" +
+              expected +
+              ", tol=" +
+              tolerance +
+              ")"
+          );
+        }
+      }
+
+      /**
+       * 単純な == 比較用
+       */
+      function assertEqual(actual, expected, message) {
+        if (actual !== expected) {
+          throw new Error(
+            "ASSERT FAIL: " +
+              (message || "") +
+              " (actual=" +
+              actual +
+              ", expected=" +
+              expected +
+              ")"
+          );
+        }
+      }
+
+      /**
+       * テスト前に毎回呼ぶ初期化。
+       * - すでに three.js / ゲーム本体の window.onload が走っている前提
+       * - playerIdx / currentLevel をリセットして startMatch() でプレイヤーと敵を再生成
+       */
+      function prepareMatchForTest() {
+        // startMatch が定義されているかチェック
+        if (typeof startMatch !== "function") {
+          throw new Error(
+            "startMatch が定義されていません。JSの貼り付け位置を確認してください。"
+          );
+        }
+
+        playerIdx = 0; // VORTEX で検証
+        currentLevel = 0; // LV1 の敵から
+
+        // 既存の試合を破棄して再生成
+        startMatch();
+
+        assertTrue(
+          typeof player !== "undefined" && typeof enemy !== "undefined",
+          "player / enemy 変数が定義されていること"
+        );
+        assertTrue(player && enemy, "player / enemy が生成されていること");
+
+        // ターゲットの相互リンクも確認
+        // 要は player.target === enemy かつ enemy.target === player であること
+        assertTrue(
+          player.target === enemy && enemy.target === player,
+          "player / enemy の target 双方向リンク"
+        );
+      }
+
+      /**
+       * テスト1: ガード中のダメージ軽減とゲージ増加の確認
+       *
+       * - state === 'guard' のとき incoming damage は 20% に軽減される
+       * - ゲージは +5 される
+       * - プレイヤーのみ、ゲージが MAX に達したらビーム弾数が 3 にリセットされる仕様だが、
+       *   このテストは CPU 敵側で行うのでビーム補充は起こらない
+       */
+      function testGuardDamage() {
+        testLog("--- [TEST] ガード時ダメージ軽減テスト 開始 ---");
+
+        prepareMatchForTest();
+
+        // 敵側でガード検証を行う
+        enemy.state = "guard";
+        const prevHp = enemy.hp;
+        const prevGauge = enemy.gauge;
+
+        const damage = 50;
+        enemy.takeDamage(damage);
+
+        // 期待値計算
+        const expectedHp = prevHp - damage * 0.2; // 20% ダメージ
+        const expectedGauge = Math.min(enemy.maxGauge, prevGauge + 5);
+
+        assertApproxEqual(
+          enemy.hp,
+          expectedHp,
+          0.0001,
+          "ガード時HP減少量が 20% になっているか"
+        );
+        assertEqual(enemy.gauge, expectedGauge, "ガード時ゲージ増加 +5");
+
+        testLog("OK: ガード中のダメージ軽減とゲージ増加が期待通りです。");
+      }
+
+      /**
+       * テスト2: ゲージMAX時にプレイヤーのビーム弾数が補充されるか
+       *
+       * - takeDamage 内で
+       *   - ゲージを加算後、gauge >= maxGauge となった場合
+       *   - isPlayer === true かつ beamCount < 3 なら beamCount = 3 にリセット
+       */
+      function testGaugeAndBeamRecharge() {
+        testLog("--- [TEST] ゲージMAX & ビーム補充テスト 開始 ---");
+
+        prepareMatchForTest();
+
+        // プレイヤー側でテストを行う
+        player.gauge = player.maxGauge - 5; // ここから +10 されると MAX を超える
+        player.beamCount = 1; // わざと残弾を減らしておく
+
+        const prevMaxGauge = player.maxGauge;
+
+        // 10 ダメージを与えることでゲージ +10 → MAX を超える
+        const prevHp = player.hp;
+
+        player.takeDamage(10);
+
+        // HP は 10 減る
+        assertApproxEqual(
+          player.hp,
+          prevHp - 10,
+          0.0001,
+          "プレイヤーHPが減っていること"
+        );
+
+        // ゲージは MAX にクランプされる
+        assertEqual(
+          player.gauge,
+          prevMaxGauge,
+          "ゲージが MAX にクランプされていること"
+        );
+
+        // ビーム弾数が 3 に補充されている
+        assertEqual(
+          player.beamCount,
+          3,
+          "ゲージMAX時にビーム弾数が 3 にリセットされていること"
+        );
+
+        testLog("OK: ゲージMAX時にビーム弾数が正しく補充されています。");
+      }
+
+      /**
+       * テスト3: 飛び道具（Projectile）が一定距離以内に入ると相手にダメージを与えるか
+       *
+       * 仕様（ゲーム本体コードより）：
+       * - Projectile.update(dt) 内で
+       *   - プレイヤーとターゲットの XZ 距離 distXZ < 1.5 かつ
+       *   - targetPos.y <= 1.3 （ジャンプで避けていない）
+       *   → this.owner.target.takeDamage(15) を呼ぶ
+       */
+      function testProjectileHit() {
+        testLog("--- [TEST] 飛び道具ヒットテスト 開始 ---");
+
+        prepareMatchForTest();
+
+        // 初期状態では player / enemy はそれなりに離れているので、
+        // 一旦距離を詰めておく。
+        // （XZ平面で距離 1.0 くらいにしておく）
+        enemy.mesh.position.copy(
+          player.mesh.position.clone().add({ x: 1.0, y: 0, z: 0 })
+        );
+
+        const prevHp = enemy.hp;
+
+        // プレイヤー側から飛び道具を1発生成
+        const proj = new Projectile(player);
+
+        // dt を少し大きめにして update を何度か回して衝突させる
+        let alive = true;
+        for (let i = 0; i < 60 && alive; i++) {
+          // 1秒分くらい
+          alive = proj.update(1 / 60);
+        }
+
+        // 15 ダメージ入っているはず
+        const expectedHp = prevHp - 15;
+        assertApproxEqual(
+          enemy.hp,
+          expectedHp,
+          0.0001,
+          "飛び道具ヒットによるダメージ 15"
+        );
+
+        testLog(
+          "OK: 飛び道具が一定距離で敵にヒットし、ダメージ 15 が入っています。"
+        );
+      }
+
+      /**
+       * 全テストを順番に実行するランナー
+       */
+      function runAllTests() {
+        testLog("======================================");
+        testLog("NEKKEN ロジック テスト開始");
+
+        const tests = [
+          { name: "testGuardDamage", fn: testGuardDamage },
+          { name: "testGaugeAndBeamRecharge", fn: testGaugeAndBeamRecharge },
+          { name: "testProjectileHit", fn: testProjectileHit },
+        ];
+
+        let passCount = 0;
+
+        tests.forEach((t) => {
+          try {
+            t.fn();
+            passCount++;
+          } catch (e) {
+            testLog("NG: " + t.name + " で失敗しました → " + e.message);
+            console.error(e);
+          }
+        });
+
+        testLog(
+          "--- テスト完了: " + passCount + " / " + tests.length + " 件成功 ---"
+        );
+        testLog("======================================");
+      }
+
+      // ページロード完了時に軽くメッセージだけ出しておく
+      window.addEventListener("load", () => {
+        testLog("// ページロード完了。");
+        testLog("// [テスト実行] ボタンを押してください。");
+      });
+    </script>
+  </body>
+</html>
