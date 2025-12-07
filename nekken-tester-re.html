@@ -2442,18 +2442,24 @@
            ========================= */
 
       // 1. データ定義の基本チェック
-      NekkenTestRunner.add("PLAYER_CATS / ENEMY_CATS が配列で定義されている", () => {
-        nyannyanAssert(
-          Array.isArray(PLAYER_CATS),
-          "PLAYER_CATS は配列である必要があります"
-        );
-        nyannyanAssert(
-          Array.isArray(ENEMY_CATS),
-          "ENEMY_CATS は配列である必要があります"
-        );
-        nyannyanAssert(PLAYER_CATS.length > 0, "プレイヤー用の猫が1体以上必要です");
-        nyannyanAssert(ENEMY_CATS.length > 0, "敵用の猫が1体以上必要です");
-      });
+      NekkenTestRunner.add(
+        "PLAYER_CATS / ENEMY_CATS が配列で定義されている",
+        () => {
+          nyannyanAssert(
+            Array.isArray(PLAYER_CATS),
+            "PLAYER_CATS は配列である必要があります"
+          );
+          nyannyanAssert(
+            Array.isArray(ENEMY_CATS),
+            "ENEMY_CATS は配列である必要があります"
+          );
+          nyannyanAssert(
+            PLAYER_CATS.length > 0,
+            "プレイヤー用の猫が1体以上必要です"
+          );
+          nyannyanAssert(ENEMY_CATS.length > 0, "敵用の猫が1体以上必要です");
+        }
+      );
 
       // 2. 各キャラの必須プロパティの型チェック
       NekkenTestRunner.add(
@@ -2461,10 +2467,22 @@
         () => {
           const checkCat = (cat, idx, isEnemy) => {
             const prefix = (isEnemy ? "ENEMY" : "PLAYER") + `[${idx}]`;
-            nyannyanAssert(typeof cat.name === "string", `${prefix}.name は文字列`);
-            nyannyanAssert(typeof cat.speed === "number", `${prefix}.speed は数値`);
-            nyannyanAssert(typeof cat.power === "number", `${prefix}.power は数値`);
-            nyannyanAssert(typeof cat.hpMulti === "number", `${prefix}.hpMulti は数値`);
+            nyannyanAssert(
+              typeof cat.name === "string",
+              `${prefix}.name は文字列`
+            );
+            nyannyanAssert(
+              typeof cat.speed === "number",
+              `${prefix}.speed は数値`
+            );
+            nyannyanAssert(
+              typeof cat.power === "number",
+              `${prefix}.power は数値`
+            );
+            nyannyanAssert(
+              typeof cat.hpMulti === "number",
+              `${prefix}.hpMulti は数値`
+            );
           };
           PLAYER_CATS.forEach((c, i) => checkCat(c, i, false));
           ENEMY_CATS.forEach((c, i) => checkCat(c, i, true));
@@ -2502,32 +2520,35 @@
       );
 
       // 4. ビーム弾数ロジックテスト
-      NekkenTestRunner.add("ゲージMAX時にプレイヤーのビーム弾数が補充される", () => {
-        const tempCat = new Cat(PLAYER_CATS[0], true, 0);
+      NekkenTestRunner.add(
+        "ゲージMAX時にプレイヤーのビーム弾数が補充される",
+        () => {
+          const tempCat = new Cat(PLAYER_CATS[0], true, 0);
 
-        try {
-          tempCat.target = tempCat; // ダミー
-          tempCat.beamCount = 0;
-          tempCat.gauge = tempCat.maxGauge - 10;
+          try {
+            tempCat.target = tempCat; // ダミー
+            tempCat.beamCount = 0;
+            tempCat.gauge = tempCat.maxGauge - 10;
 
-          // ちょっとダメージを与える → gauge +=10 → maxGauge に到達
-          tempCat.takeDamage(1);
+            // ちょっとダメージを与える → gauge +=10 → maxGauge に到達
+            tempCat.takeDamage(1);
 
-          nyannyanAssertEqual(
-            tempCat.gauge,
-            tempCat.maxGauge,
-            "ダメージでゲージが max まで増える想定"
-          );
-          nyannyanAssert(
-            tempCat.beamCount >= 1,
-            "ゲージMAX到達時にビーム弾数が（0から）増えているはず"
-          );
-        } finally {
-          if (scene && tempCat && tempCat.mesh) {
-            scene.remove(tempCat.mesh);
+            nyannyanAssertEqual(
+              tempCat.gauge,
+              tempCat.maxGauge,
+              "ダメージでゲージが max まで増える想定"
+            );
+            nyannyanAssert(
+              tempCat.beamCount >= 1,
+              "ゲージMAX到達時にビーム弾数が（0から）増えているはず"
+            );
+          } finally {
+            if (scene && tempCat && tempCat.mesh) {
+              scene.remove(tempCat.mesh);
+            }
           }
         }
-      });
+      );
 
       /* =========================
            ブートストラップ処理
