@@ -12,61 +12,311 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <style>
-      /* テスト画面用のスタイル。ゲーム用UIは全部 display:none にする */
+      /* ================================
+     カラーテーマと共通変数
+     ================================ */
+      :root {
+        --bg-main: #050608;
+        --bg-panel: rgba(18, 22, 32, 0.92);
+        --bg-panel-soft: rgba(18, 22, 32, 0.7);
+        --accent: #00e0ff;
+        --accent-soft: rgba(0, 224, 255, 0.2);
+        --accent-strong: #00ffe0;
+        --danger: #ff4b81;
+        --text-main: #f5f5f5;
+        --text-sub: #a5b0c5;
+        --border-soft: rgba(255, 255, 255, 0.08);
+        --shadow-soft: 0 18px 45px rgba(0, 0, 0, 0.7);
+        --radius-lg: 16px;
+        --radius-md: 10px;
+        --radius-sm: 6px;
+        --transition-fast: 0.18s ease-out;
+        --transition-normal: 0.25s ease-out;
+        --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        --font-mono: "SF Mono", "Consolas", "Menlo", monospace;
+      }
+
+      /* ================================
+     全体レイアウトと背景
+     ================================ */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+      }
 
       body {
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-          sans-serif;
-        padding: 16px;
-        background: #111;
-        color: #eee;
+        font-family: var(--font-sans);
+        color: var(--text-main);
+        background: radial-gradient(
+            circle at 10% 10%,
+            #13284b 0,
+            transparent 60%
+          ),
+          radial-gradient(circle at 90% 20%, #46224b 0, transparent 55%),
+          radial-gradient(circle at 20% 85%, #135a4b 0, transparent 55%),
+          var(--bg-main);
+        background-attachment: fixed;
+        display: flex;
+        justify-content: flex-start;
+        align-items: center;
+        flex-direction: column;
+        padding: 32px 16px 24px;
+        box-sizing: border-box;
       }
 
+      /* 小さめ画面でも余白を少し詰める */
+      @media (max-width: 600px) {
+        body {
+          padding: 20px 10px 16px;
+        }
+      }
+
+      /* ================================
+     見出し（タイトル）
+     ================================ */
       h1 {
-        font-size: 20px;
-        margin-bottom: 12px;
+        width: 100%;
+        max-width: 960px;
+        margin: 0 0 18px;
+        font-size: 22px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--accent-strong);
+        text-shadow: 0 0 8px rgba(0, 255, 224, 0.7),
+          0 0 28px rgba(0, 160, 255, 0.75);
+        display: flex;
+        align-items: center;
+        gap: 10px;
       }
 
+      h1::before {
+        content: "";
+        display: inline-block;
+        width: 18px;
+        height: 18px;
+        border-radius: 6px;
+        background: linear-gradient(
+          135deg,
+          var(--accent),
+          var(--accent-strong)
+        );
+        box-shadow: 0 0 12px rgba(0, 255, 224, 0.8),
+          0 0 24px rgba(0, 112, 255, 0.8);
+      }
+
+      /* ================================
+     テストパネル本体
+     ================================ */
       #test-panel {
-        border: 1px solid #444;
-        padding: 12px;
-        margin-bottom: 16px;
-        background: #1b1b1b;
-        border-radius: 4px;
+        width: 100%;
+        max-width: 960px;
+        margin: 0 0 16px;
+        padding: 14px 16px;
+        background: var(--bg-panel);
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border-soft);
+        box-shadow: var(--shadow-soft);
+        backdrop-filter: blur(14px) saturate(1.3);
+        -webkit-backdrop-filter: blur(14px) saturate(1.3);
+        position: relative;
+        overflow: hidden;
+      }
+
+      /* 枠のグラデーション光 */
+      #test-panel::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        padding: 1px;
+        background: linear-gradient(
+          135deg,
+          rgba(0, 255, 224, 0.7),
+          rgba(0, 160, 255, 0.5),
+          rgba(180, 90, 255, 0.5)
+        );
+        -webkit-mask: linear-gradient(#000 0 0) content-box,
+          linear-gradient(#000 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        pointer-events: none;
+      }
+
+      /* パネル内のレイアウト（ボタン・説明テキストなどを並べても崩れにくいように） */
+      #test-panel {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px 12px;
+      }
+
+      /* ================================
+     ボタン共通スタイル
+     （ゲーム側のボタンも含めてリッチにする）
+     ================================ */
+      #test-panel button,
+      #test-panel button:focus,
+      #test-panel button:active {
+        outline: none;
       }
 
       #test-panel button {
-        margin: 4px;
-        padding: 6px 12px;
-        border-radius: 3px;
-        border: 1px solid #555;
-        background: #222;
-        color: #eee;
+        position: relative;
+        padding: 8px 18px;
+        min-width: 140px;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        border-radius: 999px;
+        border: 1px solid rgba(0, 255, 224, 0.5);
+        background: radial-gradient(
+            circle at 10% 0%,
+            rgba(255, 255, 255, 0.24),
+            transparent 55%
+          ),
+          linear-gradient(135deg, #04232a, #05151d);
+        color: var(--text-main);
         cursor: pointer;
+        box-shadow: 0 0 0 1px rgba(0, 255, 224, 0.15),
+          0 10px 26px rgba(0, 0, 0, 0.65);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        transition: transform var(--transition-fast),
+          box-shadow var(--transition-fast), background var(--transition-fast),
+          border-color var(--transition-fast), color var(--transition-fast);
+        user-select: none;
+      }
+
+      #test-panel button::before {
+        /* 左端に小さいインジケータ（テスト感） */
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--accent-strong);
+        box-shadow: 0 0 8px rgba(0, 255, 224, 0.9),
+          0 0 16px rgba(0, 160, 255, 0.9);
       }
 
       #test-panel button:hover {
-        background: #333;
+        transform: translateY(-1px) scale(1.02);
+        background: radial-gradient(
+            circle at 10% 0%,
+            rgba(255, 255, 255, 0.28),
+            transparent 55%
+          ),
+          linear-gradient(135deg, #06323b, #071f2b);
+        box-shadow: 0 0 0 1px rgba(0, 255, 224, 0.25),
+          0 14px 34px rgba(0, 0, 0, 0.8);
       }
 
+      #test-panel button:active {
+        transform: translateY(1px) scale(0.99);
+        box-shadow: 0 0 0 1px rgba(0, 255, 224, 0.3),
+          0 6px 18px rgba(0, 0, 0, 0.9);
+      }
+
+      #test-panel button:focus-visible {
+        box-shadow: 0 0 0 1px rgba(0, 255, 224, 0.5),
+          0 0 0 3px rgba(0, 255, 224, 0.35), 0 12px 30px rgba(0, 0, 0, 0.7);
+      }
+
+      /* ================================
+     テストログ（コンソール風）
+     ================================ */
       #test-log {
-        background: #000;
-        color: #0f0;
-        padding: 8px;
-        border-radius: 4px;
-        border: 1px solid #333;
-        max-height: 300px;
-        overflow-y: auto;
+        width: 100%;
+        max-width: 960px;
+        margin: 0;
+        padding: 12px 14px;
+        box-sizing: border-box;
+        background: radial-gradient(
+            circle at 10% 0,
+            rgba(0, 255, 170, 0.12),
+            transparent 55%
+          ),
+          radial-gradient(
+            circle at 100% 0,
+            rgba(0, 180, 255, 0.18),
+            transparent 55%
+          ),
+          linear-gradient(145deg, #020507, #050910);
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border-soft);
+        box-shadow: var(--shadow-soft);
+        color: #9effa8;
+        font-family: var(--font-mono);
         font-size: 12px;
-        font-family: "SF Mono", "Consolas", "Menlo", monospace;
+        line-height: 1.55;
+        overflow-y: auto;
+        max-height: 360px;
+        white-space: pre-wrap; /* 長いログでも折り返して読みやすく */
+        position: relative;
       }
 
-      /* ゲーム用DOMはまとめて非表示にしておく */
+      /* ログ上部の細いインジケータライン */
+      #test-log::before {
+        content: "TEST CONSOLE";
+        position: absolute;
+        top: 6px;
+        right: 10px;
+        font-size: 10px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: rgba(158, 255, 168, 0.45);
+      }
+
+      /* ログ下部に薄いグラデーション */
+      #test-log::after {
+        content: "";
+        position: sticky;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 20px;
+        pointer-events: none;
+        background: linear-gradient(
+          to bottom,
+          transparent,
+          rgba(5, 9, 16, 0.9)
+        );
+      }
+
+      /* スクロールバーのカスタマイズ（対応ブラウザのみ） */
+      #test-log::-webkit-scrollbar {
+        width: 8px;
+      }
+      #test-log::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      #test-log::-webkit-scrollbar-thumb {
+        background: linear-gradient(
+          to bottom,
+          var(--accent),
+          var(--accent-strong)
+        );
+        border-radius: var(--radius-sm);
+      }
+      #test-log::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(to bottom, var(--accent-strong), #ffffff);
+      }
+
+      /* ================================
+     ゲームDOMをまとめて非表示にする
+     （テストモードなのでプレイ画面は隠す）
+     ================================ */
       #game-dom-root {
         display: none;
       }
 
-      /* game-container は最低限サイズを持たせておく（three.js の renderer がここに生える） */
+      /* three.js 用コンテナは最低限のサイズを持たせる
+     （表示はしないが、内部的な計算が 0 にならないよう保険で残しておく） */
       #game-container {
         width: 400px;
         height: 300px;
