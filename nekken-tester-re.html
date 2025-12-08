@@ -8,6 +8,7 @@
     />
     <title>NEKKEN: ARCADE MODE</title>
     <style>
+      /* スタイル設定 (変更なし) */
       body {
         margin: 0;
         overflow: hidden;
@@ -626,7 +627,6 @@
     </div>
 
     <script>
-      /* ここから下はゲームロジック（元のまま） */
       const Input = {
         x: 0,
         y: 0,
@@ -787,6 +787,7 @@
         projectiles = [];
       let currentLevel = 0,
         retryCredits = 3;
+      let floorMesh; // 背景変更用にグローバル化
 
       const PLAYER_CATS = [
         {
@@ -962,6 +963,8 @@
 
       const AudioSys = {
         ctx: null,
+        bgmOscillators: [],
+        bgmInterval: null,
         init: function () {
           if (!this.ctx)
             this.ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -987,33 +990,154 @@
           const osc = this.ctx.createOscillator();
           const gain = this.ctx.createGain();
           const filter = this.ctx.createBiquadFilter();
-
           osc.type = "sawtooth";
           filter.type = "lowpass";
           filter.frequency.value = 1000;
-
           const startFreq = isPain
             ? 500 + Math.random() * 200
             : 300 + Math.random() * 150;
           const duration = isPain ? 0.2 : 0.4 + Math.random() * 0.3;
-
           osc.frequency.setValueAtTime(startFreq, t);
           osc.frequency.linearRampToValueAtTime(
             startFreq * 1.5,
             t + duration * 0.3
           );
           osc.frequency.linearRampToValueAtTime(startFreq * 0.8, t + duration);
-
           gain.gain.setValueAtTime(0, t);
           gain.gain.linearRampToValueAtTime(0.1, t + duration * 0.1);
           gain.gain.exponentialRampToValueAtTime(0.01, t + duration);
-
           osc.connect(filter);
           filter.connect(gain);
           gain.connect(this.ctx.destination);
-
           osc.start(t);
           osc.stop(t + duration);
+        },
+        // ① BGM機能の実装
+        stopBGM: function () {
+          if (this.bgmInterval) {
+            clearInterval(this.bgmInterval);
+            this.bgmInterval = null;
+          }
+          this.bgmOscillators.forEach((o) => {
+            try {
+              o.stop();
+            } catch (e) {}
+          });
+          this.bgmOscillators = [];
+        },
+        playBGM: function (level) {
+          this.stopBGM();
+          if (!this.ctx) return;
+
+          // レベルに基づいてBPMと雰囲気パラメータを決定
+          const bpm = 140 + level * 5;
+          const interval = 60000 / bpm / 4; // 16分音符
+
+          let step = 0;
+          let patternType = 0; // 0:Grass, 1:Concrete/Desert, 2:Sea, 3:Magma
+          if (level < 2) patternType = 0;
+          else if (level < 6) patternType = 1;
+          else if (level < 8) patternType = 2;
+          else patternType = 3;
+
+          // ベース音色
+          const bassOscType =
+            patternType === 3
+              ? "sawtooth"
+              : patternType === 2
+              ? "sine"
+              : "square";
+          const scale = [55, 65.4, 73.4, 82.4]; // A, C, D, E (Simple Pentatonic-ish)
+
+          this.bgmInterval = setInterval(() => {
+            const t = this.ctx.currentTime;
+
+            // Bass Line
+            if (step % 4 === 0 || (patternType === 3 && step % 2 === 0)) {
+              const osc = this.ctx.createOscillator();
+              const gain = this.ctx.createGain();
+              osc.type = bassOscType;
+
+              // プロシージャルなベースライン生成
+              const noteIdx =
+                (Math.floor(step / 4) + (step % 3)) % scale.length;
+              let freq = scale[noteIdx];
+              if (patternType === 3) freq *= 0.5; // マグマは重低音
+
+              osc.frequency.setValueAtTime(freq, t);
+              osc.frequency.exponentialRampToValueAtTime(freq * 0.5, t + 0.1);
+
+              gain.gain.setValueAtTime(0.1, t);
+              gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+
+              osc.connect(gain);
+              gain.connect(this.ctx.destination);
+              osc.start(t);
+              osc.stop(t + 0.2);
+            }
+
+            // Drum / Hi-hat (White Noise buffer)
+            if (step % 2 === 0) {
+              // Hi-hat every 8th note
+              const bufferSize = this.ctx.sampleRate * 0.05;
+              const buffer = this.ctx.createBuffer(
+                1,
+                bufferSize,
+                this.ctx.sampleRate
+              );
+              const data = buffer.getChannelData(0);
+              for (let i = 0; i < bufferSize; i++)
+                data[i] = Math.random() * 2 - 1;
+
+              const noise = this.ctx.createBufferSource();
+              noise.buffer = buffer;
+              const filter = this.ctx.createBiquadFilter();
+              filter.type = "highpass";
+              filter.frequency.value = 5000;
+              const gain = this.ctx.createGain();
+
+              const vol = step % 4 === 2 ? 0.05 : 0.02; // 裏拍で強調
+              gain.gain.setValueAtTime(vol, t);
+              gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+
+              noise.connect(filter);
+              filter.connect(gain);
+              gain.connect(this.ctx.destination);
+              noise.start(t);
+            }
+
+            // Kick (Synth)
+            if (step % 4 === 0) {
+              const osc = this.ctx.createOscillator();
+              const gain = this.ctx.createGain();
+              osc.type = "sine";
+              osc.frequency.setValueAtTime(150, t);
+              osc.frequency.exponentialRampToValueAtTime(0.01, t + 0.1);
+              gain.gain.setValueAtTime(0.3, t);
+              gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+              osc.connect(gain);
+              gain.connect(this.ctx.destination);
+              osc.start(t);
+              osc.stop(t + 0.1);
+            }
+
+            // Arpeggio / Melody (Levelが高くなると激しくなる)
+            if (patternType > 0 && Math.random() < 0.2 + level * 0.05) {
+              const osc = this.ctx.createOscillator();
+              const gain = this.ctx.createGain();
+              osc.type = "triangle";
+              const mFreq = scale[Math.floor(Math.random() * scale.length)] * 4;
+              osc.frequency.setValueAtTime(mFreq, t);
+              gain.gain.setValueAtTime(0.05, t);
+              gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+              osc.connect(gain);
+              gain.connect(this.ctx.destination);
+              osc.start(t);
+              osc.stop(t + 0.1);
+            }
+
+            step = (step + 1) % 16;
+          }, interval);
         },
         hit: () => AudioSys.playTone(150, "square", 0.2, 0.2),
         swing: () => AudioSys.playTone(400, "sawtooth", 0.1, 0.05),
@@ -1050,19 +1174,116 @@
         scene.add(dir);
         const grid = new THREE.GridHelper(40, 40, 0x00ffff, 0x222222);
         scene.add(grid);
-        const plane = new THREE.Mesh(
-          new THREE.PlaneGeometry(100, 100),
-          new THREE.MeshBasicMaterial({ color: 0x050505 })
-        );
-        plane.rotation.x = -Math.PI / 2;
-        plane.position.y = -0.1;
-        scene.add(plane);
+
+        // 床の初期化 (後でテクスチャ差し替え)
+        const planeGeo = new THREE.PlaneGeometry(100, 100);
+        const planeMat = new THREE.MeshStandardMaterial({
+          color: 0x222222,
+          roughness: 0.8,
+        });
+        floorMesh = new THREE.Mesh(planeGeo, planeMat);
+        floorMesh.rotation.x = -Math.PI / 2;
+        floorMesh.position.y = -0.1;
+        floorMesh.receiveShadow = true;
+        scene.add(floorMesh);
+
         clock = new THREE.Clock();
         window.addEventListener("resize", () => {
           camera.aspect = container.clientWidth / container.clientHeight;
           camera.updateProjectionMatrix();
           renderer.setSize(container.clientWidth, container.clientHeight);
         });
+      }
+
+      // ② テクスチャマッピングによる床の生成
+      function updateStageFloor(level) {
+        let type = "grass";
+        if (level < 2) type = "grass";
+        else if (level < 4) type = "concrete";
+        else if (level < 6) type = "desert";
+        else if (level < 8) type = "sea";
+        else type = "magma";
+
+        const size = 512;
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+
+        // ベースカラー
+        if (type === "grass") ctx.fillStyle = "#2dda27";
+        else if (type === "concrete") ctx.fillStyle = "#ffffff";
+        else if (type === "desert") ctx.fillStyle = "#f2f240";
+        else if (type === "sea") ctx.fillStyle = "#006ea2";
+        else if (type === "magma") ctx.fillStyle = "#330000";
+        ctx.fillRect(0, 0, size, size);
+
+        // ノイズ・模様描画
+        for (let i = 0; i < 3000; i++) {
+          const x = Math.random() * size;
+          const y = Math.random() * size;
+          const len = 5 + Math.random() * 10;
+
+          ctx.beginPath();
+          if (type === "grass") {
+            ctx.strokeStyle = "#3e7e38";
+            ctx.moveTo(x, y);
+            ctx.lineTo(x, y - len);
+          } else if (type === "concrete") {
+            ctx.fillStyle = Math.random() < 0.5 ? "#444" : "#666";
+            ctx.fillRect(x, y, 2, 2);
+          } else if (type === "desert") {
+            ctx.strokeStyle = "#d4c490";
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + len, y + Math.sin(x * 0.1) * 5);
+          } else if (type === "sea") {
+            ctx.strokeStyle = "#004488";
+            ctx.lineWidth = 2;
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + len * 2, y);
+          } else if (type === "magma") {
+            if (Math.random() < 0.1) {
+              ctx.strokeStyle = "#ff3300";
+              ctx.lineWidth = 2;
+              ctx.moveTo(x, y);
+              ctx.lineTo(x + len, y + len);
+            }
+          }
+          ctx.stroke();
+        }
+
+        // マグマ用のひび割れ
+        if (type === "magma") {
+          ctx.strokeStyle = "#ffaa00";
+          ctx.lineWidth = 3;
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = "#ff0000";
+          for (let i = 0; i < 10; i++) {
+            ctx.beginPath();
+            let cx = Math.random() * size;
+            let cy = Math.random() * size;
+            ctx.moveTo(cx, cy);
+            for (let j = 0; j < 20; j++) {
+              cx += (Math.random() - 0.5) * 50;
+              cy += (Math.random() - 0.5) * 50;
+              ctx.lineTo(cx, cy);
+            }
+            ctx.stroke();
+          }
+        }
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(10, 10);
+
+        floorMesh.material.map = texture;
+        floorMesh.material.needsUpdate = true;
+
+        // 環境光の色も少し調整
+        if (type === "magma") scene.fog.color.setHex(0x330000);
+        else if (type === "sea") scene.fog.color.setHex(0x001133);
+        else scene.fog.color.setHex(0x0a0a12);
       }
 
       function createCatTexture(baseColorHex, trimColorHex, patternType) {
@@ -1177,6 +1398,7 @@
 
           this.mesh = new THREE.Group();
           this.mesh.position.set(0, 0, startZ);
+
           this.modelGroup = new THREE.Group();
           this.modelGroup.rotation.y = Math.PI;
           this.mesh.add(this.modelGroup);
@@ -1350,7 +1572,7 @@
 
             const pawGeo = new THREE.CylinderGeometry(0.06, 0.08, 0.1, 8);
             pawGeo.rotateX(Math.PI / 2);
-            const paw = new THREE.Mesh(pawGeo, d.socks ? socksMat : trimMat);
+            const paw = new THREE.Mesh(pawGeo, data.socks ? socksMat : trimMat);
             paw.scale.set(1, 1, 1.5);
             paw.position.set(0, -0.15, 0.05);
             if (!d.isFront) paw.rotation.x = -0.5;
@@ -1442,8 +1664,13 @@
           }
 
           const t = clock.elapsedTime * 10;
+          this.mesh.rotation.y =
+            this.target && this.state !== "special" && this.state !== "ultimate"
+              ? 0
+              : this.mesh.rotation.y;
 
           this.hips.position.set(0, 0.55, 0);
+
           this.hips.rotation.z = 0;
           this.abdomen.rotation.x = 0;
           this.chest.rotation.x = 0;
@@ -1471,6 +1698,7 @@
           } else if (this.state === "attack") {
             const lungAmount = Math.sin(Math.PI * (1 - this.timer / 0.3)) * 0.2;
             this.hips.position.z += lungAmount;
+
             this.chest.rotation.x = -0.2;
             this.legs[1].root.rotation.x =
               -1.0 * Math.sin(Math.PI * (1 - this.timer / 0.3));
@@ -1574,6 +1802,7 @@
           if (this.state === "guard") {
             amount *= 0.2;
             this.gauge += 5;
+
             if (this.gauge >= this.maxGauge) {
               this.gauge = this.maxGauge;
               if (this.isPlayer && this.beamCount < 3) {
@@ -1620,15 +1849,51 @@
         }
       }
 
+      // ③ スペシャル攻撃ビームのデザイン変更
       class Projectile {
         constructor(owner) {
           this.owner = owner;
-          const geo = new THREE.CylinderGeometry(0.2, 0.2, 2, 8);
-          geo.rotateX(Math.PI / 2);
-          this.mesh = new THREE.Mesh(
-            geo,
-            new THREE.MeshBasicMaterial({ color: 0x00ffff })
-          );
+
+          // Groupを使って複雑な形状を作成
+          this.mesh = new THREE.Group();
+          const color = 0x00ffff;
+          const glowMat = new THREE.MeshBasicMaterial({ color: color });
+          const clawMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+
+          // 肉球のパーム
+          const palmGeo = new THREE.SphereGeometry(0.5, 12, 12);
+          const palm = new THREE.Mesh(palmGeo, glowMat);
+          palm.scale.set(1, 0.6, 1);
+          this.mesh.add(palm);
+
+          // 4つの指と爪
+          for (let i = 0; i < 4; i++) {
+            const angle = (i - 1.5) * 0.4; // 扇状に配置
+            const fingerGroup = new THREE.Group();
+            fingerGroup.position.set(
+              Math.sin(angle) * 0.5,
+              0,
+              Math.cos(angle) * 0.5 - 0.2
+            );
+            fingerGroup.rotation.y = angle;
+
+            // 指
+            const finger = new THREE.Mesh(
+              new THREE.SphereGeometry(0.2, 8, 8),
+              glowMat
+            );
+            fingerGroup.add(finger);
+
+            // 鋭い爪
+            const clawGeo = new THREE.ConeGeometry(0.08, 0.5, 4);
+            clawGeo.rotateX(-Math.PI / 2);
+            const claw = new THREE.Mesh(clawGeo, clawMat);
+            claw.position.z = 0.3;
+            fingerGroup.add(claw);
+
+            this.mesh.add(fingerGroup);
+          }
+
           this.mesh.position.copy(owner.mesh.position);
           this.mesh.position.y = 1.0;
           this.mesh.lookAt(
@@ -1648,6 +1913,10 @@
           this.mesh.position.add(
             this.dir.clone().multiplyScalar(this.speed * dt)
           );
+
+          // 回転演出
+          this.mesh.rotateZ(10 * dt);
+
           const targetPos = this.owner.target.mesh.position;
           const dx = this.mesh.position.x - targetPos.x;
           const dz = this.mesh.position.z - targetPos.z;
@@ -1723,7 +1992,6 @@
 
       function updateGame(dt) {
         Input.update();
-
         if (!Input.attack) inputLock.attack = false;
         if (!Input.special) inputLock.special = false;
         if (!Input.ultimate) inputLock.ultimate = false;
@@ -2165,6 +2433,7 @@
         player = new Cat(PLAYER_CATS[playerIdx], true, 5);
         const enemyData =
           ENEMY_CATS[Math.min(currentLevel, ENEMY_CATS.length - 1)];
+
         enemy = new Cat(enemyData, false, -5);
         if (!enemy.data.infiniteBeams) {
           const currentEnemyLvl = enemy.data.aiLevel || 1;
@@ -2180,6 +2449,11 @@
         document.getElementById("result-screen").classList.add("hidden");
         document.getElementById("level-display").innerText =
           "Lv." + (currentLevel + 1);
+
+        // ステージごとの床とBGM更新
+        updateStageFloor(currentLevel);
+        AudioSys.playBGM(currentLevel);
+
         updateHUD();
         currentState = GAME_STATE.FIGHT;
       }
@@ -2189,7 +2463,6 @@
         if (!player || !enemy) {
           return;
         }
-
         const p1pct = (player.hp / player.maxHp) * 100;
         const p2pct = (enemy.hp / enemy.maxHp) * 100;
         document.getElementById("p1-hp").style.width = Math.max(0, p1pct) + "%";
@@ -2199,7 +2472,6 @@
         document.getElementById("p2-gauge").style.width =
           Math.min(100, enemy.gauge) + "%";
         document.getElementById("enemy-name").innerText = enemy.data.name;
-
         const spBtn = document.getElementById("btn-sp");
         spBtn.innerHTML = `SP<br>(X)<br><span style="font-size:10px; color:${
           player.beamCount > 0 ? "#ffff00" : "#888"
@@ -2213,6 +2485,7 @@
 
       function endRound(playerLost) {
         currentState = GAME_STATE.END;
+        AudioSys.stopBGM(); // 勝敗がついたらBGM停止
         setTimeout(() => {
           document.getElementById("hud").style.display = "none";
           document.getElementById("controls-area").style.display = "none";
@@ -2260,6 +2533,13 @@
         if (currentState === GAME_STATE.FIGHT) updateGame(dt);
         renderer.render(scene, camera);
       }
+      window.onload = function () {
+        init3D();
+        Input.init();
+        document.getElementById("start-btn").onclick = startGame;
+        document.getElementById("retry-btn").onclick = startMatch;
+        animate();
+      };
 
       /* =========================
            ここからテスト用フレームワーク
