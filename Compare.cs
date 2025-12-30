@@ -12,7 +12,7 @@ public static class ResultSetSorterService
     ///
     /// 期待する構造（実行時チェック）:
     /// - 外側: IDictionary（RowId -> Row）
-    ///   - Key は int である必要があります（タイブレークと 0..N-1 振り直しのため）
+    ///   - Key は int である必要がある（タイブレークと 0..N-1 振り直しのため）
     ///   - Value は IDictionary（列名 -> 値）である必要がある
     /// - sortKey の値は string または null のみ許可
     ///
@@ -20,9 +20,9 @@ public static class ResultSetSorterService
     /// - ASC: NULLS LAST / DESC: NULLS FIRST
     /// - 文字列比較は UTF-8 バイト列の辞書順（Culture 非依存）
     /// - 同値なら RowId 昇順でタイブレーク
-    /// - 並び替え後、外側辞書を Clear し、RowId を 0..N-1 に振り直して再構築
+    /// - 並び替え後、全体結果セットを Clear し、RowId を 0..N-1 に振り直して再構築
     /// </summary>
-    /// <param name="resultSet">外側辞書（RowId -> 行辞書）</param>
+    /// <param name="resultSet">全体結果セット（RowId -> 行結果セット）</param>
     /// <param name="sortKey">ソート対象の列名</param>
     /// <param name="descending">降順にするか（ASC: NULLS LAST / DESC: NULLS FIRST）</param>
     /// <returns>並び替え後の同一インスタンス（IDictionary として返す）</returns>
@@ -40,7 +40,7 @@ public static class ResultSetSorterService
             throw new ArgumentException("sortKey cannot be null or whitespace.", nameof(sortKey));
         }
 
-        // ---- UTF-8 バイト比較（元の Utf8ByteComparer と同等） -----------------
+        // ---- UTF-8 バイト比較 -----------------
         // 同じ文字列が何度も出る場合、UTF-8 変換を毎回やるとコストが高いのでキャッシュする
         var byteCache = new Dictionary<string, byte[]>(capacity: 16);
 
@@ -86,7 +86,7 @@ public static class ResultSetSorterService
 
         // ソート用に詰め替え
         // - RowId: 元の行番号（タイブレークに使う）
-        // - Row  : 行辞書（IDictionary）
+        // - Row  : 行結果セット（IDictionary）
         // - Value: sortKey の値（string?）
         var rows = new List<(int RowId, IDictionary Row, string? Value)>(resultSet.Count);
 
