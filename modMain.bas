@@ -6,6 +6,14 @@ Option Explicit
 '   操作用 .xlsm から外部 .xlsx を編集するエントリポイント。
 ' =============================================================================
 
+' 走査対象設定:
+'   ここを変更すれば、対象シート・列・開始行をまとめて変更できる。
+Private Const TARGET_SHEET_NAME As String = "ソース"
+Private Const LEFT_COLUMN As String = "C"
+Private Const RIGHT_COLUMN As String = "D"
+Private Const START_ROW As Long = 5
+Private Const OPERATION_SHEET_NAME As String = "操作"
+
 Private Type AppState
   ScreenUpdating As Boolean
   EnableEvents As Boolean
@@ -35,9 +43,9 @@ Public Sub SetupOperationSheet()
   Dim ws As Worksheet
   Dim btn As Button
 
-  Set ws = GetOrCreateSheet(ThisWorkbook, "操作")
+  Set ws = GetOrCreateSheet(ThisWorkbook, OPERATION_SHEET_NAME)
 
-  ws.Range("A1").Value = "外部 .xlsx の C5:D を整形します。"
+  ws.Range("A1").Value = "外部 .xlsx の " & LEFT_COLUMN & CStr(START_ROW) & ":" & RIGHT_COLUMN & " を整形します。"
   ws.Range("A2").Value = "ボタンを押すとファイル選択ダイアログが開きます。"
 
   On Error Resume Next
@@ -78,11 +86,11 @@ Public Sub RunAlignmentForFile(ByVal targetPath As String)
 
   Set ws = Nothing
   On Error Resume Next
-  Set ws = wb.Worksheets("ソース")
+  Set ws = wb.Worksheets(TARGET_SHEET_NAME)
   On Error GoTo ErrorHandler
 
   If ws Is Nothing Then
-    Err.Raise vbObjectError + 2000, "RunAlignmentForFile", "対象シート「ソース」が見つかりません。"
+    Err.Raise vbObjectError + 2000, "RunAlignmentForFile", "対象シート「" & TARGET_SHEET_NAME & "」が見つかりません。"
   End If
 
   AlignSourceSheet ws
@@ -131,16 +139,16 @@ Private Sub AlignSourceSheet(ByVal ws As Worksheet)
   Dim writeLastRow As Long
   Dim clearLastRow As Long
 
-  lastRowC = LastUsedRowInColumn(ws, "C")
-  lastRowD = LastUsedRowInColumn(ws, "D")
-  lastRow = IIf(lastRowC > lastRowD, lastRowC, lastRowD)
+  lastRowC = LastUsedRowInColumn(ws, LEFT_COLUMN)
+  lastRowD = LastUsedRowInColumn(ws, RIGHT_COLUMN)
+  lastRow = MaxLong(lastRowC, lastRowD)
 
-  If lastRow < 5 Then
-    MsgBox "C5:D に整形対象データがありません。", vbInformation
+  If lastRow < START_ROW Then
+    MsgBox LEFT_COLUMN & CStr(START_ROW) & ":" & RIGHT_COLUMN & " に整形対象データがありません。", vbInformation
     Exit Sub
   End If
 
-  sourceValues = ws.Range("C5:D" & CStr(lastRow)).Value2
+  sourceValues = ws.Range(SourceRangeAddress(lastRow)).Value2
   rowCount = UBound(sourceValues, 1)
 
   ReDim leftOriginal(0 To rowCount - 1)
@@ -155,7 +163,7 @@ Private Sub AlignSourceSheet(ByVal ws As Worksheet)
   alignedCount = GetStringArrayCount(alignedLeft)
 
   If alignedCount = 0 Then
-    ws.Range("C5:D" & CStr(lastRow)).ClearContents
+    ws.Range(SourceRangeAddress(lastRow)).ClearContents
     Exit Sub
   End If
 
@@ -165,11 +173,11 @@ Private Sub AlignSourceSheet(ByVal ws As Worksheet)
     writeValues(i, 2) = alignedRight(i - 1)
   Next i
 
-  writeLastRow = 4 + alignedCount
-  clearLastRow = IIf(lastRow > writeLastRow, lastRow, writeLastRow)
+  writeLastRow = (START_ROW - 1) + alignedCount
+  clearLastRow = MaxLong(lastRow, writeLastRow)
 
-  ws.Range("C5:D" & CStr(clearLastRow)).ClearContents
-  ws.Range("C5:D" & CStr(writeLastRow)).Value2 = writeValues
+  ws.Range(SourceRangeAddress(clearLastRow)).ClearContents
+  ws.Range(SourceRangeAddress(writeLastRow)).Value2 = writeValues
 End Sub
 
 Private Function PickTargetXlsxPath() As String
@@ -229,6 +237,18 @@ End Function
 
 Private Function LastUsedRowInColumn(ByVal ws As Worksheet, ByVal colLetter As String) As Long
   LastUsedRowInColumn = ws.Cells(ws.Rows.Count, colLetter).End(xlUp).Row
+End Function
+
+Private Function SourceRangeAddress(ByVal endRow As Long) As String
+  SourceRangeAddress = LEFT_COLUMN & CStr(START_ROW) & ":" & RIGHT_COLUMN & CStr(endRow)
+End Function
+
+Private Function MaxLong(ByVal a As Long, ByVal b As Long) As Long
+  If a > b Then
+    MaxLong = a
+  Else
+    MaxLong = b
+  End If
 End Function
 
 Private Function VariantToString(ByVal value As Variant) As String
