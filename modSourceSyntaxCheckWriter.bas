@@ -198,6 +198,11 @@ Private Sub MarkCurrentSourceSheet(ByVal sourceSheet As Worksheet, ByRef markedC
     For rowIndex = 1 To lastRow
         lineText = GetCellText(sourceSheet.Cells(rowIndex, SOURCE_TEXT_COL))
 
+        ' HTMLの開始タグを検出したら、それ以降の行は検索しない
+        If IsSourceSearchStopLine(lineText) Then
+            Exit For
+        End If
+
         If IsMarkTargetLine(lineText) Then
             sourceSheet.Cells(rowIndex, MARK_COL).Value = MARK_STRING
             markedCount = markedCount + 1
@@ -221,6 +226,11 @@ Private Function CollectSyntaxEvents(ByVal sourceSheet As Worksheet) As Collecti
 
     Do While rowIndex <= lastRow
         lineText = GetCellText(sourceSheet.Cells(rowIndex, SOURCE_TEXT_COL))
+
+        ' HTMLの開始タグを検出したら、それ以降の行は検索しない
+        If IsSourceSearchStopLine(lineText) Then
+            Exit Do
+        End If
 
         If Len(Trim$(lineText)) = 0 Then
             rowIndex = rowIndex + 1
@@ -486,6 +496,11 @@ Private Function CollectSwitchEvent(ByVal sourceSheet As Worksheet, ByVal switch
     For r = switchRow + 1 To lastRow
         lineText = GetCellText(sourceSheet.Cells(r, SOURCE_TEXT_COL))
         trimmedText = Trim$(lineText)
+
+        ' 現行ソースシートの検索打ち切り条件（HTML開始タグ）
+        If IsSourceSearchStopLine(lineText) Then
+            Exit For
+        End If
 
         ' 次のfunction / switch は次の構文として扱いたいので、ここで打ち切る
         If IsFunctionLine(lineText) Then
@@ -776,6 +791,14 @@ Private Function IsFunctionLine(ByVal lineText As String) As Boolean
     IsFunctionLine = ContainsText(lineText, "function")
 End Function
 
+Private Function IsSourceSearchStopLine(ByVal lineText As String) As Boolean
+    ' HTML開始付近に入ったら、現行ソースシートの下側は検索しない
+    IsSourceSearchStopLine = _
+        ContainsText(lineText, "<!doctype") Or _
+        ContainsText(lineText, "<html") Or _
+        ContainsText(lineText, "<head")
+End Function
+
 Private Function ContainsText(ByVal sourceText As String, ByVal findText As String) As Boolean
     ' 大文字小文字を無視した部分一致
     If Len(findText) = 0 Then
@@ -822,4 +845,3 @@ Private Function EventCollection(ByVal ev As Collection, ByVal keyName As String
 NoCollection:
     Set EventCollection = Nothing
 End Function
-
