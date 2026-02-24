@@ -3,14 +3,14 @@ Option Explicit
 
 ' ==========================================
 ' Excel用: 現行ソースシートのマーキング + 個別シート出力
-' 仕様に合わせて、文字列ベース（部分一致）で構文を判定する初版実装
+' 文字列ベースで構文を判定する
 ' ==========================================
 
 Private Const SOURCE_TEXT_COL As Long = 3   ' C列
 Private Const MARK_COL As Long = 2          ' B列
 Private Const SECTION_HEADER_START_ROW As Long = 9
 Private Const BLOCK_STEP_NORMAL As Long = 5
-Private Const MARK_STRING As String = "*****"
+Private Const INDIVIDUAL_TEMPLATE_INSERT_CHUNK As Long = 50
 Private Const SYMBOL_FILLED As String = "■"
 Private Const SYMBOL_EMPTY As String = "□"
 Private Const SHEET_KEY_CURRENT_SOURCE As String = "現行ソース"
@@ -187,13 +187,17 @@ Private Function FindIndividualSheet(ByVal targetWorkbook As Workbook, ByVal fea
 End Function
 
 Private Sub MarkCurrentSourceSheet(ByVal sourceSheet As Worksheet, ByRef markedCount As Long)
-    ' 現行ソースシートのC列を走査し、対象構文に該当する行のB列へ*****を設定
+    ' 現行ソースシートのC列を走査し、対象構文に応じてB列へセクション番号を設定する
+    ' - function 行      : B(次セクション番号)   例: B2
+    ' - その他の対象構文 : B(現セクション番号)- 例: B1-
     Dim lastRow As Long
     Dim rowIndex As Long
     Dim lineText As String
+    Dim currentSectionIndex As Long
 
     markedCount = 0
     lastRow = GetLastRow(sourceSheet, SOURCE_TEXT_COL)
+    currentSectionIndex = 1
 
     For rowIndex = 1 To lastRow
         lineText = GetCellText(sourceSheet.Cells(rowIndex, SOURCE_TEXT_COL))
@@ -203,8 +207,12 @@ Private Sub MarkCurrentSourceSheet(ByVal sourceSheet As Worksheet, ByRef markedC
             Exit For
         End If
 
-        If IsMarkTargetLine(lineText) Then
-            sourceSheet.Cells(rowIndex, MARK_COL).Value = MARK_STRING
+        If IsFunctionLine(lineText) Then
+            currentSectionIndex = currentSectionIndex + 1
+            sourceSheet.Cells(rowIndex, MARK_COL).Value = "B" & CStr(currentSectionIndex)
+            markedCount = markedCount + 1
+        ElseIf IsMarkTargetLine(lineText) Then
+            sourceSheet.Cells(rowIndex, MARK_COL).Value = "B" & CStr(currentSectionIndex) & "-"
             markedCount = markedCount + 1
         End If
     Next rowIndex
@@ -250,7 +258,7 @@ Private Function CollectSyntaxEvents(ByVal sourceSheet As Worksheet) As Collecti
                 rowIndex = switchEndRow
             End If
 
-        ' else / else if / default / case の単体行は、初版では個別シート出力をしない
+        ' else / else if / default / case の単体行は、個別シート出力をしない
         ElseIf IsElseIfLine(lineText) Then
             ' 個別シート出力なし
         ElseIf IsElseLine(lineText) Then
@@ -324,6 +332,8 @@ End Sub
 
 Private Sub WriteSectionHeader(ByVal ws As Worksheet, ByVal headerRow As Long, ByVal sectionIndex As Long, ByVal sectionName As String)
     ' 処理セクション見出し行の出力
+    EnsureIndividualSheetWritableRow ws, headerRow
+
     ws.Range("A" & CStr(headerRow)).Value = "B" & CStr(sectionIndex)
     ws.Range("K" & CStr(headerRow)).Value = SYMBOL_FILLED
     ws.Range("M" & CStr(headerRow)).Value = "処理（" & sectionName & "）"
@@ -331,20 +341,25 @@ End Sub
 
 Private Sub WriteNormalBlock(ByVal ws As Worksheet, ByVal startRow As Long, ByVal eventItem As Collection)
     ' if / 三項演算子 / for / foreach / while の共通形式
-    ws.Range("E" & CStr(startRow)).Value = "XXXXX"
+    EnsureIndividualSheetWritableRow ws, startRow
+    ws.Range("E" & CStr(startRow)).Value = "***"
     ws.Range("L" & CStr(startRow)).Value = SYMBOL_EMPTY
     ws.Range("N" & CStr(startRow)).Value = EventText(eventItem, "Title")
 
+    EnsureIndividualSheetWritableRow ws, startRow + 1
     ws.Range("H" & CStr(startRow + 1)).Value = 1
     ws.Range("M" & CStr(startRow + 1)).Value = SYMBOL_EMPTY
     ws.Range("O" & CStr(startRow + 1)).Value = EventText(eventItem, "Cond1")
-    ws.Range("AX" & CStr(startRow + 1)).Value = EventText(eventItem, "Result1")
+    ws.Range("AX" & CStr(startRow + 1)).Value = SYMBOL_EMPTY
+    ws.Range("AZ" & CStr(startRow + 1)).Value = EventText(eventItem, "Result1")
     ws.Range("CF" & CStr(startRow + 1)).Value = "1,4"
 
+    EnsureIndividualSheetWritableRow ws, startRow + 3
     ws.Range("H" & CStr(startRow + 3)).Value = 2
     ws.Range("M" & CStr(startRow + 3)).Value = SYMBOL_EMPTY
     ws.Range("O" & CStr(startRow + 3)).Value = EventText(eventItem, "Cond2")
-    ws.Range("AX" & CStr(startRow + 3)).Value = EventText(eventItem, "Result2")
+    ws.Range("AX" & CStr(startRow + 3)).Value = SYMBOL_EMPTY
+    ws.Range("AZ" & CStr(startRow + 3)).Value = EventText(eventItem, "Result2")
     ws.Range("CF" & CStr(startRow + 3)).Value = "1,4"
 End Sub
 
@@ -369,7 +384,8 @@ Private Function WriteSwitchBlock(ByVal ws As Worksheet, ByVal startRow As Long,
     hasDefault = EventFlag(eventItem, "HasDefault")
     Set caseValues = EventCollection(eventItem, "CaseValues")
 
-    ws.Range("E" & CStr(startRow)).Value = "XXXXX"
+    EnsureIndividualSheetWritableRow ws, startRow
+    ws.Range("E" & CStr(startRow)).Value = "***"
     ws.Range("L" & CStr(startRow)).Value = SYMBOL_EMPTY
     ws.Range("N" & CStr(startRow)).Value = titleText
 
@@ -401,11 +417,57 @@ End Function
 
 Private Sub WriteSwitchBranchRow(ByVal ws As Worksheet, ByVal rowIndex As Long, ByVal seqNo As Long, ByVal conditionText As String, ByVal expectedText As String)
     ' switchの分岐行（case/default相当）の共通出力
+    EnsureIndividualSheetWritableRow ws, rowIndex
+
     ws.Range("H" & CStr(rowIndex)).Value = seqNo
     ws.Range("M" & CStr(rowIndex)).Value = SYMBOL_EMPTY
     ws.Range("O" & CStr(rowIndex)).Value = conditionText
-    ws.Range("AX" & CStr(rowIndex)).Value = expectedText
+    ws.Range("AX" & CStr(rowIndex)).Value = SYMBOL_EMPTY
+    ws.Range("AZ" & CStr(rowIndex)).Value = expectedText
     ws.Range("CF" & CStr(rowIndex)).Value = "1,4"
+End Sub
+
+Private Sub EnsureIndividualSheetWritableRow(ByVal ws As Worksheet, ByVal rowIndex As Long)
+    ' A:Dが「ちょうど」結合されていない行へ書き込む前に、
+    ' 2行上（α-2）のテンプレート行をまとめて挿入して追記領域を拡張する
+    Dim retryCount As Long
+    Dim templateRow As Long
+
+    If rowIndex < 3 Then Exit Sub
+    templateRow = rowIndex - 2
+
+    ' テンプレートからはみ出したタイミングで、1回の拡張につき約50行を追加する
+    For retryCount = 1 To 2
+        If IsIndividualSheetADMerged(ws, rowIndex) Then
+            Exit Sub
+        End If
+
+        InsertTemplateRowsChunk ws, templateRow, rowIndex, INDIVIDUAL_TEMPLATE_INSERT_CHUNK
+        Application.CutCopyMode = False
+    Next retryCount
+End Sub
+
+Private Function IsIndividualSheetADMerged(ByVal ws As Worksheet, ByVal rowIndex As Long) As Boolean
+    ' A列セルの結合範囲が、その行の A:D と「ちょうど一致」するか判定
+    Dim firstCell As Range
+
+    Set firstCell = ws.Range("A" & CStr(rowIndex))
+
+    If Not firstCell.MergeCells Then Exit Function
+
+    With firstCell.MergeArea
+        IsIndividualSheetADMerged = (.Row = rowIndex And .Column = 1 And .Rows.Count = 1 And .Columns.Count = 4)
+    End With
+End Function
+
+Private Sub InsertTemplateRowsChunk(ByVal ws As Worksheet, ByVal templateRow As Long, ByVal insertAtRow As Long, ByVal insertCount As Long)
+    ' templateRow を元に、insertAtRow へ insertCount 行分のテンプレートを挿入する
+    If templateRow < 1 Then Exit Sub
+    If insertAtRow < 1 Then Exit Sub
+    If insertCount < 1 Then Exit Sub
+
+    ws.Rows(CStr(templateRow) & ":" & CStr(templateRow)).Copy
+    ws.Rows(CStr(insertAtRow) & ":" & CStr(insertAtRow + insertCount - 1)).Insert Shift:=xlDown
 End Sub
 
 Private Function CreateNormalSyntaxEvent(ByVal syntaxKind As String) As Collection
@@ -680,7 +742,7 @@ End Function
 
 Private Function IsMarkTargetLine(ByVal lineText As String) As Boolean
     ' 現行ソースシートのB列マーキング対象
-    ' ※ 仕様どおり、文字列ベースの部分一致判定を採用
+    ' ※ 文字列ベースの部分一致判定を採用
     If Len(Trim$(lineText)) = 0 Then
         Exit Function
     End If
@@ -744,15 +806,18 @@ End Function
 Private Function IsIfLine(ByVal lineText As String) As Boolean
     ' else if は別扱いなので除外
     If IsElseIfLine(lineText) Then Exit Function
-    IsIfLine = ContainsText(lineText, "if")
+    IsIfLine = ContainsWholeWord(lineText, "if")
 End Function
 
 Private Function IsElseIfLine(ByVal lineText As String) As Boolean
-    IsElseIfLine = ContainsText(lineText, "else if")
+    ' 「else if」の連続を前提にしつつ、各単語は単語区切りで判定する
+    IsElseIfLine = ContainsText(lineText, "else if") And _
+                   ContainsWholeWord(lineText, "else") And _
+                   ContainsWholeWord(lineText, "if")
 End Function
 
 Private Function IsElseLine(ByVal lineText As String) As Boolean
-    IsElseLine = ContainsText(lineText, "else")
+    IsElseLine = ContainsWholeWord(lineText, "else")
 End Function
 
 Private Function IsTernaryLine(ByVal lineText As String) As Boolean
@@ -761,34 +826,34 @@ Private Function IsTernaryLine(ByVal lineText As String) As Boolean
 End Function
 
 Private Function IsForeachLine(ByVal lineText As String) As Boolean
-    IsForeachLine = ContainsText(lineText, "foreach")
+    IsForeachLine = ContainsWholeWord(lineText, "foreach")
 End Function
 
 Private Function IsForLine(ByVal lineText As String) As Boolean
     ' foreach とは区別する
     If IsForeachLine(lineText) Then Exit Function
-    IsForLine = ContainsText(lineText, "for")
+    IsForLine = ContainsWholeWord(lineText, "for")
 End Function
 
 Private Function IsWhileLine(ByVal lineText As String) As Boolean
-    IsWhileLine = ContainsText(lineText, "while")
+    IsWhileLine = ContainsWholeWord(lineText, "while")
 End Function
 
 Private Function IsSwitchLine(ByVal lineText As String) As Boolean
-    IsSwitchLine = ContainsText(lineText, "switch")
+    IsSwitchLine = ContainsWholeWord(lineText, "switch")
 End Function
 
 Private Function IsCaseLine(ByVal lineText As String) As Boolean
-    ' 初版は「case」と「:」を含むで判定
-    IsCaseLine = ContainsText(lineText, "case") And (InStr(1, lineText, ":", vbBinaryCompare) > 0)
+    ' 「case」を単語区切りで判定し、かつ「:」を含む行を対象にする
+    IsCaseLine = ContainsWholeWord(lineText, "case") And (InStr(1, lineText, ":", vbBinaryCompare) > 0)
 End Function
 
 Private Function IsDefaultLine(ByVal lineText As String) As Boolean
-    IsDefaultLine = ContainsText(lineText, "default:")
+    IsDefaultLine = ContainsWholeWord(lineText, "default") And (InStr(1, lineText, ":", vbBinaryCompare) > 0)
 End Function
 
 Private Function IsFunctionLine(ByVal lineText As String) As Boolean
-    IsFunctionLine = ContainsText(lineText, "function")
+    IsFunctionLine = ContainsWholeWord(lineText, "function")
 End Function
 
 Private Function IsSourceSearchStopLine(ByVal lineText As String) As Boolean
@@ -797,6 +862,59 @@ Private Function IsSourceSearchStopLine(ByVal lineText As String) As Boolean
         ContainsText(lineText, "<!doctype") Or _
         ContainsText(lineText, "<html") Or _
         ContainsText(lineText, "<head")
+End Function
+
+Private Function ContainsWholeWord(ByVal sourceText As String, ByVal findWord As String) As Boolean
+    ' 単語区切りで一致する場合のみTrue
+    ' 例: "for" は "form" ではヒットしない
+    Dim searchPos As Long
+    Dim hitPos As Long
+    Dim endPos As Long
+    Dim beforeChar As String
+    Dim afterChar As String
+
+    If Len(findWord) = 0 Then Exit Function
+
+    searchPos = 1
+
+    Do
+        hitPos = InStr(searchPos, sourceText, findWord, vbTextCompare)
+        If hitPos = 0 Then Exit Do
+
+        endPos = hitPos + Len(findWord) - 1
+        beforeChar = vbNullString
+        afterChar = vbNullString
+
+        If hitPos > 1 Then
+            beforeChar = Mid$(sourceText, hitPos - 1, 1)
+        End If
+
+        If endPos < Len(sourceText) Then
+            afterChar = Mid$(sourceText, endPos + 1, 1)
+        End If
+
+        If (Not IsWordChar(beforeChar)) And (Not IsWordChar(afterChar)) Then
+            ContainsWholeWord = True
+            Exit Function
+        End If
+
+        searchPos = hitPos + 1
+    Loop
+End Function
+
+Private Function IsWordChar(ByVal ch As String) As Boolean
+    ' 単語構成文字（ASCII識別子系）を判定
+    Dim codePoint As Long
+
+    If Len(ch) = 0 Then Exit Function
+
+    codePoint = AscW(ch)
+    IsWordChar = _
+        (codePoint >= 48 And codePoint <= 57) Or _
+        (codePoint >= 65 And codePoint <= 90) Or _
+        (codePoint >= 97 And codePoint <= 122) Or _
+        (ch = "_") Or _
+        (ch = "$")
 End Function
 
 Private Function ContainsText(ByVal sourceText As String, ByVal findText As String) As Boolean
