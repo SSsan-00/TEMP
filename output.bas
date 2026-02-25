@@ -28,6 +28,8 @@ Private Const REFER_SHEET_NAME As String = "REFER"            ' 入力ファイ�
 ' 実行時エラーになる環境があるため、必ず列番号へ変換してから使う
 Private Const REFER_KEY_COL_LETTER As String = "E"   ' 入力ファイル名のキー列（完全一致）
 Private Const REFER_VALUE_COL_LETTER As String = "F" ' referValue を取得する列
+Private Const REFER_BETA_COL_LETTER As String = "D"  ' β（00形式にする番号）を取得する列
+Private Const REFER_ALPHA_COL_LETTER As String = "J" ' α（拡張子なし元文字列）を取得する列
 
 ' ===== 参照元シートの走査条件 =====
 Private Const SOURCE_START_ROW As Long = 8          ' 仕様にある開始行
@@ -71,6 +73,9 @@ Public Sub GenerateEvidenceSheets()
     Dim inputFileName As String
     Dim baseName As String
     Dim referValue As String
+    Dim expectedCommonWorkbookName As String
+    Dim expectedIndividualWorkbookName As String
+    Dim targetNameCheckMessage As String
 
     Dim commonSourceSheetName As String
     Dim commonSourceWs As Worksheet
@@ -130,6 +135,16 @@ Public Sub GenerateEvidenceSheets()
 
     ' REFERシートから referValue を取得する（キーは入力ファイル名）。
     referValue = GetReferValueFromReferSheet(referWs, inputFileName)
+
+    ' 旧仕様の「作成するファイル名をREFERシートから決める」ロジックも併存させる。
+    ' （J/D/F列から α/β/γ を組み立て、共通/個別の想定ファイル名を生成）
+    BuildEvidenceWorkbookNamesFromRefer referWs, inputFileName, _
+                                       expectedCommonWorkbookName, expectedIndividualWorkbookName
+
+    ' ユーザーが選択したターゲットブック名が想定名と一致しているかは確認する。
+    ' 運用上の都合で別名を使う可能性もあるため、不一致でも処理は継続する。
+    targetNameCheckMessage = BuildTargetNameCheckMessage( _
+        targetWb.Name, expectedCommonWorkbookName, expectedIndividualWorkbookName)
 
     ' 速度改善のため、画面更新や再計算を一時的に止める
     ' 大量のシートコピーやセル書き込みで体感速度が大きく変わりる
@@ -194,7 +209,10 @@ Public Sub GenerateEvidenceSheets()
                    "ターゲットブック: " & targetWb.Name & vbCrLf & _
                    "入力ファイル名: " & inputFileName & vbCrLf & _
                    "baseName: " & baseName & vbCrLf & _
-                   "REFER(F): " & referValue & vbCrLf & vbCrLf & _
+                   "REFER(F): " & referValue & vbCrLf & _
+                   "想定ファイル名（共通）: " & expectedCommonWorkbookName & vbCrLf & _
+                   "想定ファイル名（個別）: " & expectedIndividualWorkbookName & vbCrLf & _
+                   targetNameCheckMessage & vbCrLf & vbCrLf & _
                    commonSummary & vbCrLf & _
                    individualSummary
 
@@ -341,6 +359,85 @@ Private Function GetReferValueFromReferSheet( _
     End If
 End Function
 
+Private Sub BuildEvidenceWorkbookNamesFromRefer( _
+    ByVal referWs As Worksheet, _
+    ByVal inputFileName As String, _
+    ByRef commonWorkbookName As String, _
+    ByRef individualWorkbookName As String)
+
+    ' 旧仕様との互換のため、REFERシートから α/β/γ を組み立てて
+    ' 作成対象のファイル名（共通/個別）を決定する。
+    '
+    ' α = J列（拡張子なし）
+    ' β = D列（00形式）
+    ' γ = F列
+    Dim matchedRow As Long
+    Dim matchCount As Long
+    Dim alphaColIndex As Long
+    Dim betaColIndex As Long
+    Dim gammaColIndex As Long
+    Dim alphaText As String
+    Dim betaText As String
+    Dim gammaText As String
+    Dim betaRaw As Variant
+
+    matchedRow = FindRowByExactMatch(referWs, REFER_KEY_COL_LETTER, inputFileName, matchCount)
+
+    If matchCount = 0 Then
+        Err.Raise vbObjectError + 2131, "BuildEvidenceWorkbookNamesFromRefer", _
+                  "REFERシートから想定ファイル名を組み立てるためのキーが見つかりません。" & vbCrLf & _
+                  "キー(" & REFER_KEY_COL_LETTER & "列): " & inputFileName
+    End If
+
+    If matchCount > 1 Then
+        Err.Raise vbObjectError + 2132, "BuildEvidenceWorkbookNamesFromRefer", _
+                  "REFERシートから想定ファイル名を組み立てる対象が複数あります。" & vbCrLf & _
+                  "キー(" & REFER_KEY_COL_LETTER & "列): " & inputFileName & vbCrLf & _
+                  "件数: " & CStr(matchCount)
+    End If
+
+    alphaColIndex = ColumnLetterToIndex(REFER_ALPHA_COL_LETTER, "α列")
+    betaColIndex = ColumnLetterToIndex(REFER_BETA_COL_LETTER, "β列")
+    gammaColIndex = ColumnLetterToIndex(REFER_VALUE_COL_LETTER, "γ列")
+
+    alphaText = RemoveExtension(GetTrimmedCellStringOrRaise( _
+        referWs.Cells(matchedRow, alphaColIndex).Value, _
+        "BuildEvidenceWorkbookNamesFromRefer", _
+        "REFERシートの" & REFER_ALPHA_COL_LETTER & "列（α）"))
+    If Len(alphaText) = 0 Then
+        Err.Raise vbObjectError + 2133, "BuildEvidenceWorkbookNamesFromRefer", _
+                  "REFERシートの" & REFER_ALPHA_COL_LETTER & "列（α）から拡張子なし文字列を取得できませんでした。"
+    End If
+
+    betaRaw = referWs.Cells(matchedRow, betaColIndex).Value
+    If IsError(betaRaw) Then
+        Err.Raise vbObjectError + 2134, "BuildEvidenceWorkbookNamesFromRefer", _
+                  "REFERシートの" & REFER_BETA_COL_LETTER & "列（β）にエラー値が入っています。"
+    End If
+    betaText = ToTwoDigitStringStrict(betaRaw, "REFERシートの" & REFER_BETA_COL_LETTER & "列（β）")
+
+    gammaText = GetTrimmedCellStringOrRaise( _
+        referWs.Cells(matchedRow, gammaColIndex).Value, _
+        "BuildEvidenceWorkbookNamesFromRefer", _
+        "REFERシートの" & REFER_VALUE_COL_LETTER & "列（γ）")
+
+    commonWorkbookName = alphaText & "_【共通】" & betaText & gammaText & "_単体テストエビデンス_初期開発.xlsx"
+    individualWorkbookName = alphaText & "_【個別】" & betaText & gammaText & "_単体テストエビデンス_初期開発.xlsx"
+End Sub
+
+Private Function BuildTargetNameCheckMessage( _
+    ByVal actualTargetWorkbookName As String, _
+    ByVal expectedCommonWorkbookName As String, _
+    ByVal expectedIndividualWorkbookName As String) As String
+
+    If StrComp(actualTargetWorkbookName, expectedCommonWorkbookName, vbBinaryCompare) = 0 Or _
+       StrComp(actualTargetWorkbookName, expectedIndividualWorkbookName, vbBinaryCompare) = 0 Then
+        BuildTargetNameCheckMessage = "ターゲット名照合: OK（REFERから決まる想定名と一致）"
+    Else
+        BuildTargetNameCheckMessage = "ターゲット名照合: 注意（REFER想定名と不一致のまま処理を継続）"
+    End If
+End Function
+
 Private Function FindRowByExactMatch( _
     ByVal ws As Worksheet, _
     ByVal targetColLetter As String, _
@@ -415,6 +512,45 @@ Private Function ColumnLetterToIndex( _
         Err.Raise vbObjectError + 2123, "ColumnLetterToIndex", _
                   prefix & "列番号がExcelの範囲外です: " & columnLetter
     End If
+End Function
+
+Private Function GetTrimmedCellStringOrRaise( _
+    ByVal cellValue As Variant, _
+    ByVal callerName As String, _
+    ByVal valueLabel As String) As String
+
+    If IsError(cellValue) Then
+        Err.Raise vbObjectError + 2124, callerName, valueLabel & " にエラー値が入っています。"
+    End If
+
+    GetTrimmedCellStringOrRaise = Trim$(CStr(cellValue))
+    If Len(GetTrimmedCellStringOrRaise) = 0 Then
+        Err.Raise vbObjectError + 2125, callerName, valueLabel & " が空です。"
+    End If
+End Function
+
+Private Function ToTwoDigitStringStrict( _
+    ByVal valueD As Variant, _
+    ByVal valueLabel As String) As String
+
+    Dim numericValue As Double
+
+    If IsEmpty(valueD) Or IsNull(valueD) Then
+        Err.Raise vbObjectError + 2126, "ToTwoDigitStringStrict", valueLabel & " が空です。"
+    End If
+
+    If Not IsNumeric(valueD) Then
+        Err.Raise vbObjectError + 2127, "ToTwoDigitStringStrict", _
+                  valueLabel & " は数値である必要があります（例: 1, 2, 10）。"
+    End If
+
+    numericValue = CDbl(valueD)
+    If numericValue <> Fix(numericValue) Then
+        Err.Raise vbObjectError + 2128, "ToTwoDigitStringStrict", _
+                  valueLabel & " は整数である必要があります。"
+    End If
+
+    ToTwoDigitStringStrict = Format$(CLng(numericValue), "00")
 End Function
 
 Private Function BuildErrorLabelPrefix(ByVal labelText As String) As String
