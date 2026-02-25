@@ -11,10 +11,14 @@ Private Const MARK_COL As Long = 2          ' B列
 Private Const SECTION_HEADER_START_ROW As Long = 9
 Private Const BLOCK_STEP_NORMAL As Long = 5
 Private Const INDIVIDUAL_TEMPLATE_INSERT_CHUNK As Long = 50
+Private Const INDIVIDUAL_TEMPLATE_SOURCE_ROW As Long = 15
 Private Const SYMBOL_FILLED As String = "■"
 Private Const SYMBOL_EMPTY As String = "□"
 Private Const SHEET_KEY_CURRENT_SOURCE As String = "現行ソース"
 Private Const SHEET_KEY_INDIVIDUAL_PREFIX As String = "【個別】"
+Private Const TEMPLATE_SNAPSHOT_SHEET_PREFIX As String = "__TMPROW15_"
+
+Private mTemplateSnapshotSheet As Worksheet
 
 Public Sub RunMain()
     On Error GoTo ErrorHandler
@@ -296,12 +300,20 @@ End Function
 
 Private Sub WriteIndividualSheet(ByVal individualSheet As Worksheet, ByVal syntaxEvents As Collection)
     ' 個別シートへ、仕様の書式で処理セクション/確認ブロックを書き込む
+    On Error GoTo ErrorHandler
+
     Dim sectionIndex As Long
     Dim nextBlockStartRow As Long
     Dim i As Long
     Dim eventItem As Collection
     Dim eventKind As String
     Dim functionName As String
+    Dim errorNumber As Long
+    Dim errorDescription As String
+    Dim errorSource As String
+
+    ' 追記処理の開始前に、個別シート15行目をテンプレートとして退避しておく
+    PrepareIndividualSheetTemplateSnapshot individualSheet
 
     ' 初期値（固定）
     sectionIndex = 1
@@ -328,6 +340,18 @@ Private Sub WriteIndividualSheet(ByVal individualSheet As Worksheet, ByVal synta
                 nextBlockStartRow = nextBlockStartRow + BLOCK_STEP_NORMAL
         End Select
     Next i
+
+    ClearIndividualSheetTemplateSnapshot
+    Exit Sub
+
+ErrorHandler:
+    errorNumber = Err.Number
+    errorDescription = Err.Description
+    errorSource = Err.Source
+
+    ClearIndividualSheetTemplateSnapshot
+
+    Err.Raise errorNumber, errorSource, errorDescription
 End Sub
 
 Private Sub WriteSectionHeader(ByVal ws As Worksheet, ByVal headerRow As Long, ByVal sectionIndex As Long, ByVal sectionName As String)
@@ -429,12 +453,10 @@ End Sub
 
 Private Sub EnsureIndividualSheetWritableRow(ByVal ws As Worksheet, ByVal rowIndex As Long)
     ' A:Dが「ちょうど」結合されていない行へ書き込む前に、
-    ' 2行上（α-2）のテンプレート行をまとめて挿入して追記領域を拡張する
+    ' 退避済みの15行目テンプレートを使って追記領域を拡張する
     Dim retryCount As Long
-    Dim templateRow As Long
 
     If rowIndex < 3 Then Exit Sub
-    templateRow = rowIndex - 2
 
     ' テンプレートからはみ出したタイミングで、1回の拡張につき約50行を追加する
     For retryCount = 1 To 2
@@ -442,7 +464,7 @@ Private Sub EnsureIndividualSheetWritableRow(ByVal ws As Worksheet, ByVal rowInd
             Exit Sub
         End If
 
-        InsertTemplateRowsChunk ws, templateRow, rowIndex, INDIVIDUAL_TEMPLATE_INSERT_CHUNK
+        InsertTemplateRowsChunk ws, rowIndex, INDIVIDUAL_TEMPLATE_INSERT_CHUNK
         Application.CutCopyMode = False
     Next retryCount
 End Sub
@@ -460,15 +482,84 @@ Private Function IsIndividualSheetADMerged(ByVal ws As Worksheet, ByVal rowIndex
     End With
 End Function
 
-Private Sub InsertTemplateRowsChunk(ByVal ws As Worksheet, ByVal templateRow As Long, ByVal insertAtRow As Long, ByVal insertCount As Long)
-    ' templateRow を元に、insertAtRow へ insertCount 行分のテンプレートを挿入する
-    If templateRow < 1 Then Exit Sub
+Private Sub InsertTemplateRowsChunk(ByVal ws As Worksheet, ByVal insertAtRow As Long, ByVal insertCount As Long)
+    ' 退避済みテンプレート（個別シート15行目のコピー）を使って、
+    ' insertAtRow へ insertCount 行分のテンプレートを挿入する
     If insertAtRow < 1 Then Exit Sub
     If insertCount < 1 Then Exit Sub
 
-    ws.Rows(CStr(templateRow) & ":" & CStr(templateRow)).Copy
+    If mTemplateSnapshotSheet Is Nothing Then
+        Err.Raise vbObjectError + 1001, "InsertTemplateRowsChunk", "テンプレート行の退避データがありません。"
+    End If
+
+    mTemplateSnapshotSheet.Rows("1:1").Copy
     ws.Rows(CStr(insertAtRow) & ":" & CStr(insertAtRow + insertCount - 1)).Insert Shift:=xlDown
 End Sub
+
+Private Sub PrepareIndividualSheetTemplateSnapshot(ByVal individualSheet As Worksheet)
+    ' 個別シート15行目を、後続の行挿入用テンプレートとして一時シートへ退避する
+    Dim wb As Workbook
+    Dim snapshotSheet As Worksheet
+
+    ClearIndividualSheetTemplateSnapshot
+
+    Set wb = individualSheet.Parent
+    Set snapshotSheet = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+    snapshotSheet.Name = BuildTemplateSnapshotSheetName(wb)
+
+    individualSheet.Rows(CStr(INDIVIDUAL_TEMPLATE_SOURCE_ROW) & ":" & CStr(INDIVIDUAL_TEMPLATE_SOURCE_ROW)).Copy
+    snapshotSheet.Rows("1:1").PasteSpecial xlPasteAll
+    Application.CutCopyMode = False
+
+    snapshotSheet.Visible = xlSheetVeryHidden
+    Set mTemplateSnapshotSheet = snapshotSheet
+End Sub
+
+Private Sub ClearIndividualSheetTemplateSnapshot()
+    ' 一時テンプレートシートを削除する
+    Dim previousDisplayAlerts As Boolean
+
+    If mTemplateSnapshotSheet Is Nothing Then Exit Sub
+
+    previousDisplayAlerts = Application.DisplayAlerts
+
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    mTemplateSnapshotSheet.Visible = xlSheetVisible
+    mTemplateSnapshotSheet.Delete
+    Set mTemplateSnapshotSheet = Nothing
+    Application.DisplayAlerts = previousDisplayAlerts
+    On Error GoTo 0
+End Sub
+
+Private Function BuildTemplateSnapshotSheetName(ByVal wb As Workbook) As String
+    ' 一時シート名を衝突しにくい形で生成する（31文字以内）
+    Dim baseName As String
+    Dim candidateName As String
+    Dim suffixNo As Long
+
+    baseName = TEMPLATE_SNAPSHOT_SHEET_PREFIX & Format$(Now, "hhnnss")
+    candidateName = Left$(baseName, 31)
+    suffixNo = 1
+
+    Do While WorksheetExistsByName(wb, candidateName)
+        candidateName = Left$(TEMPLATE_SNAPSHOT_SHEET_PREFIX & Format$(Now, "hhnnss") & "_" & CStr(suffixNo), 31)
+        suffixNo = suffixNo + 1
+    Loop
+
+    BuildTemplateSnapshotSheetName = candidateName
+End Function
+
+Private Function WorksheetExistsByName(ByVal wb As Workbook, ByVal sheetName As String) As Boolean
+    Dim ws As Worksheet
+
+    For Each ws In wb.Worksheets
+        If StrComp(ws.Name, sheetName, vbTextCompare) = 0 Then
+            WorksheetExistsByName = True
+            Exit Function
+        End If
+    Next ws
+End Function
 
 Private Function CreateNormalSyntaxEvent(ByVal syntaxKind As String) As Collection
     ' 通常ブロック（if / ternary / for / foreach / while）の文言をまとめたイベント
