@@ -10,8 +10,9 @@ Private Const SOURCE_TEXT_COL As Long = 3   ' C列
 Private Const MARK_COL As Long = 2          ' B列
 Private Const SECTION_HEADER_START_ROW As Long = 9
 Private Const BLOCK_STEP_NORMAL As Long = 5
-Private Const INDIVIDUAL_TEMPLATE_INSERT_CHUNK As Long = 50
-Private Const INDIVIDUAL_TEMPLATE_SOURCE_ROW As Long = 15
+Private Const INDIVIDUAL_TEMPLATE_INSERT_COUNT As Long = 10
+Private Const INDIVIDUAL_TEMPLATE_SOURCE_START_ROW As Long = 15
+Private Const INDIVIDUAL_TEMPLATE_SOURCE_ROW_COUNT As Long = 10
 Private Const SYMBOL_FILLED As String = "■"
 Private Const SYMBOL_EMPTY As String = "□"
 Private Const SHEET_KEY_CURRENT_SOURCE As String = "現行ソース"
@@ -206,6 +207,11 @@ Private Sub MarkCurrentSourceSheet(ByVal sourceSheet As Worksheet, ByRef markedC
     For rowIndex = 1 To lastRow
         lineText = GetCellText(sourceSheet.Cells(rowIndex, SOURCE_TEXT_COL))
 
+        ' コメント行（# / // 先頭）は書き込み対象外
+        If IsCommentLine(lineText) Then
+            GoTo ContinueMarkLoop
+        End If
+
         ' HTMLの開始タグを検出したら、それ以降の行は検索しない
         If IsSourceSearchStopLine(lineText) Then
             Exit For
@@ -219,6 +225,8 @@ Private Sub MarkCurrentSourceSheet(ByVal sourceSheet As Worksheet, ByRef markedC
             sourceSheet.Cells(rowIndex, MARK_COL).Value = "B" & CStr(currentSectionIndex) & "-"
             markedCount = markedCount + 1
         End If
+
+ContinueMarkLoop:
     Next rowIndex
 End Sub
 
@@ -238,6 +246,12 @@ Private Function CollectSyntaxEvents(ByVal sourceSheet As Worksheet) As Collecti
 
     Do While rowIndex <= lastRow
         lineText = GetCellText(sourceSheet.Cells(rowIndex, SOURCE_TEXT_COL))
+
+        ' コメント行（# / // 先頭）は個別シート出力の解析対象外
+        If IsCommentLine(lineText) Then
+            rowIndex = rowIndex + 1
+            GoTo ContinueLoop
+        End If
 
         ' HTMLの開始タグを検出したら、それ以降の行は検索しない
         If IsSourceSearchStopLine(lineText) Then
@@ -452,19 +466,21 @@ Private Sub WriteSwitchBranchRow(ByVal ws As Worksheet, ByVal rowIndex As Long, 
 End Sub
 
 Private Sub EnsureIndividualSheetWritableRow(ByVal ws As Worksheet, ByVal rowIndex As Long)
-    ' A:Dが「ちょうど」結合されていない行へ書き込む前に、
-    ' 退避済みの15行目テンプレートを使って追記領域を拡張する
+    ' A:Dが「ちょうど」結合されていない行をX行としたとき、
+    ' X-2行へ退避済みテンプレートを挿入して追記領域を拡張する
     Dim retryCount As Long
+    Dim insertAtRow As Long
 
     If rowIndex < 3 Then Exit Sub
+    insertAtRow = rowIndex - 2
 
-    ' テンプレートからはみ出したタイミングで、1回の拡張につき約50行を追加する
-    For retryCount = 1 To 2
+    ' 同じ行で再判定し、必要なら追加挿入する
+    For retryCount = 1 To 5
         If IsIndividualSheetADMerged(ws, rowIndex) Then
             Exit Sub
         End If
 
-        InsertTemplateRowsChunk ws, rowIndex, INDIVIDUAL_TEMPLATE_INSERT_CHUNK
+        InsertTemplateRowsChunk ws, insertAtRow, INDIVIDUAL_TEMPLATE_INSERT_COUNT
         Application.CutCopyMode = False
     Next retryCount
 End Sub
@@ -483,8 +499,10 @@ Private Function IsIndividualSheetADMerged(ByVal ws As Worksheet, ByVal rowIndex
 End Function
 
 Private Sub InsertTemplateRowsChunk(ByVal ws As Worksheet, ByVal insertAtRow As Long, ByVal insertCount As Long)
-    ' 退避済みテンプレート（個別シート15行目のコピー）を使って、
+    ' 退避済みテンプレート（個別シート15行目から10行）を使って、
     ' insertAtRow へ insertCount 行分のテンプレートを挿入する
+    Dim copyCount As Long
+
     If insertAtRow < 1 Then Exit Sub
     If insertCount < 1 Then Exit Sub
 
@@ -492,14 +510,21 @@ Private Sub InsertTemplateRowsChunk(ByVal ws As Worksheet, ByVal insertAtRow As 
         Err.Raise vbObjectError + 1001, "InsertTemplateRowsChunk", "テンプレート行の退避データがありません。"
     End If
 
-    mTemplateSnapshotSheet.Rows("1:1").Copy
-    ws.Rows(CStr(insertAtRow) & ":" & CStr(insertAtRow + insertCount - 1)).Insert Shift:=xlDown
+    copyCount = insertCount
+    If copyCount > INDIVIDUAL_TEMPLATE_SOURCE_ROW_COUNT Then
+        copyCount = INDIVIDUAL_TEMPLATE_SOURCE_ROW_COUNT
+    End If
+
+    mTemplateSnapshotSheet.Rows("1:" & CStr(copyCount)).Copy
+    ws.Rows(CStr(insertAtRow) & ":" & CStr(insertAtRow + copyCount - 1)).Insert Shift:=xlDown
 End Sub
 
 Private Sub PrepareIndividualSheetTemplateSnapshot(ByVal individualSheet As Worksheet)
-    ' 個別シート15行目を、後続の行挿入用テンプレートとして一時シートへ退避する
+    ' 個別シート15行目から10行を、後続の行挿入用テンプレートとして一時シートへ退避する
     Dim wb As Workbook
     Dim snapshotSheet As Worksheet
+    Dim sourceStartRow As Long
+    Dim sourceEndRow As Long
 
     ClearIndividualSheetTemplateSnapshot
 
@@ -507,8 +532,11 @@ Private Sub PrepareIndividualSheetTemplateSnapshot(ByVal individualSheet As Work
     Set snapshotSheet = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
     snapshotSheet.Name = BuildTemplateSnapshotSheetName(wb)
 
-    individualSheet.Rows(CStr(INDIVIDUAL_TEMPLATE_SOURCE_ROW) & ":" & CStr(INDIVIDUAL_TEMPLATE_SOURCE_ROW)).Copy
-    snapshotSheet.Rows("1:1").PasteSpecial xlPasteAll
+    sourceStartRow = INDIVIDUAL_TEMPLATE_SOURCE_START_ROW
+    sourceEndRow = sourceStartRow + INDIVIDUAL_TEMPLATE_SOURCE_ROW_COUNT - 1
+
+    individualSheet.Rows(CStr(sourceStartRow) & ":" & CStr(sourceEndRow)).Copy
+    snapshotSheet.Rows("1:" & CStr(INDIVIDUAL_TEMPLATE_SOURCE_ROW_COUNT)).PasteSpecial xlPasteAll
     Application.CutCopyMode = False
 
     snapshotSheet.Visible = xlSheetVeryHidden
@@ -650,6 +678,12 @@ Private Function CollectSwitchEvent(ByVal sourceSheet As Worksheet, ByVal switch
         lineText = GetCellText(sourceSheet.Cells(r, SOURCE_TEXT_COL))
         trimmedText = Trim$(lineText)
 
+        ' コメント行（# / // 先頭）はswitch収集対象外
+        If IsCommentLine(lineText) Then
+            blankStreak = 0
+            GoTo ContinueSwitchLoop
+        End If
+
         ' 現行ソースシートの検索打ち切り条件（HTML開始タグ）
         If IsSourceSearchStopLine(lineText) Then
             Exit For
@@ -680,6 +714,8 @@ Private Function CollectSwitchEvent(ByVal sourceSheet As Worksheet, ByVal switch
                 foundBranch = True
             End If
         End If
+
+ContinueSwitchLoop:
     Next r
 
     ev.Add switchArg, "SwitchArg"
@@ -829,6 +865,24 @@ Private Function GetCellText(ByVal targetCell As Range) As String
 
 SafeExit:
     GetCellText = vbNullString
+End Function
+
+Private Function IsCommentLine(ByVal lineText As String) As Boolean
+    ' 先頭（前方空白を除去後）が # または // の行をコメントとみなす
+    Dim normalizedText As String
+
+    normalizedText = LTrim$(lineText)
+
+    If Len(normalizedText) = 0 Then Exit Function
+
+    If Left$(normalizedText, 1) = "#" Then
+        IsCommentLine = True
+        Exit Function
+    End If
+
+    If Len(normalizedText) >= 2 Then
+        IsCommentLine = (Left$(normalizedText, 2) = "//")
+    End If
 End Function
 
 Private Function IsMarkTargetLine(ByVal lineText As String) As Boolean
