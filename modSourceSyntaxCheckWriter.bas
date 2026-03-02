@@ -10,7 +10,8 @@ Private Const SOURCE_TEXT_COL As Long = 3   ' C列
 Private Const MARK_COL As Long = 2          ' B列
 Private Const SECTION_HEADER_START_ROW As Long = 9
 Private Const BLOCK_STEP_NORMAL As Long = 5
-Private Const INDIVIDUAL_TEMPLATE_INSERT_COUNT As Long = 10
+Private Const INDIVIDUAL_TEMPLATE_INSERT_COUNT As Long = 100
+Private Const INDIVIDUAL_TEMPLATE_PREINSERT_MARGIN As Long = 50
 Private Const INDIVIDUAL_TEMPLATE_SOURCE_START_ROW As Long = 15
 Private Const INDIVIDUAL_TEMPLATE_SOURCE_ROW_COUNT As Long = 10
 Private Const SYMBOL_FILLED As String = "■"
@@ -466,23 +467,25 @@ Private Sub WriteSwitchBranchRow(ByVal ws As Worksheet, ByVal rowIndex As Long, 
 End Sub
 
 Private Sub EnsureIndividualSheetWritableRow(ByVal ws As Worksheet, ByVal rowIndex As Long)
-    ' A:Dが「ちょうど」結合されていない行をX行としたとき、
-    ' X-2行へ退避済みテンプレートを挿入して追記領域を拡張する
-    Dim retryCount As Long
-    Dim insertAtRow As Long
+    ' A:Dが未結合の最初の行をα行とし、
+    ' 書き込み予定行が α-50 ～ α に入る場合は事前退避テンプレートを100行挿入する
+    Dim alphaRow As Long
+    Dim triggerStartRow As Long
 
-    If rowIndex < 3 Then Exit Sub
-    insertAtRow = rowIndex - 2
+    If rowIndex < SECTION_HEADER_START_ROW Then Exit Sub
 
-    ' 同じ行で再判定し、必要なら追加挿入する
-    For retryCount = 1 To 5
-        If IsIndividualSheetADMerged(ws, rowIndex) Then
-            Exit Sub
-        End If
+    alphaRow = FindAlphaRow(ws, rowIndex)
+    If alphaRow = 0 Then Exit Sub
 
-        InsertTemplateRowsChunk ws, insertAtRow, INDIVIDUAL_TEMPLATE_INSERT_COUNT
+    triggerStartRow = alphaRow - INDIVIDUAL_TEMPLATE_PREINSERT_MARGIN
+    If triggerStartRow < 1 Then
+        triggerStartRow = 1
+    End If
+
+    If rowIndex >= triggerStartRow And rowIndex <= alphaRow Then
+        InsertTemplateRowsChunk ws, alphaRow, INDIVIDUAL_TEMPLATE_INSERT_COUNT
         Application.CutCopyMode = False
-    Next retryCount
+    End If
 End Sub
 
 Private Function IsIndividualSheetADMerged(ByVal ws As Worksheet, ByVal rowIndex As Long) As Boolean
@@ -498,10 +501,34 @@ Private Function IsIndividualSheetADMerged(ByVal ws As Worksheet, ByVal rowIndex
     End With
 End Function
 
+Private Function FindAlphaRow(ByVal ws As Worksheet, ByVal writeTargetRow As Long) As Long
+    ' α行 = A:D が未結合の最初の行
+    Dim usedLastRow As Long
+    Dim searchEndRow As Long
+    Dim r As Long
+
+    usedLastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    searchEndRow = writeTargetRow + INDIVIDUAL_TEMPLATE_PREINSERT_MARGIN
+    If searchEndRow < usedLastRow Then
+        searchEndRow = usedLastRow
+    End If
+    If searchEndRow < SECTION_HEADER_START_ROW Then
+        searchEndRow = SECTION_HEADER_START_ROW
+    End If
+
+    For r = SECTION_HEADER_START_ROW To searchEndRow
+        If Not IsIndividualSheetADMerged(ws, r) Then
+            FindAlphaRow = r
+            Exit Function
+        End If
+    Next r
+End Function
+
 Private Sub InsertTemplateRowsChunk(ByVal ws As Worksheet, ByVal insertAtRow As Long, ByVal insertCount As Long)
     ' 退避済みテンプレート（個別シート15行目から10行）を使って、
     ' insertAtRow へ insertCount 行分のテンプレートを挿入する
     Dim copyCount As Long
+    Dim insertedCount As Long
 
     If insertAtRow < 1 Then Exit Sub
     If insertCount < 1 Then Exit Sub
@@ -510,13 +537,17 @@ Private Sub InsertTemplateRowsChunk(ByVal ws As Worksheet, ByVal insertAtRow As 
         Err.Raise vbObjectError + 1001, "InsertTemplateRowsChunk", "テンプレート行の退避データがありません。"
     End If
 
-    copyCount = insertCount
-    If copyCount > INDIVIDUAL_TEMPLATE_SOURCE_ROW_COUNT Then
-        copyCount = INDIVIDUAL_TEMPLATE_SOURCE_ROW_COUNT
-    End If
+    insertedCount = 0
+    Do While insertedCount < insertCount
+        copyCount = insertCount - insertedCount
+        If copyCount > INDIVIDUAL_TEMPLATE_SOURCE_ROW_COUNT Then
+            copyCount = INDIVIDUAL_TEMPLATE_SOURCE_ROW_COUNT
+        End If
 
-    mTemplateSnapshotSheet.Rows("1:" & CStr(copyCount)).Copy
-    ws.Rows(CStr(insertAtRow) & ":" & CStr(insertAtRow + copyCount - 1)).Insert Shift:=xlDown
+        mTemplateSnapshotSheet.Rows("1:" & CStr(copyCount)).Copy
+        ws.Rows(CStr(insertAtRow + insertedCount) & ":" & CStr(insertAtRow + insertedCount + copyCount - 1)).Insert Shift:=xlDown
+        insertedCount = insertedCount + copyCount
+    Loop
 End Sub
 
 Private Sub PrepareIndividualSheetTemplateSnapshot(ByVal individualSheet As Worksheet)
