@@ -4,8 +4,8 @@ Option Explicit
 '============================================================
 ' xlsmツール（別ファイル）から、選択した xlsx を開いて加工するマクロ
 ' - "A1-1-1" シートのみを対象に処理する
-' - D列の "sqlX(...)" 部分だけを赤字＋太字（複数ヒット対応）
-' - ヒットした行の E列に "SQLインジェクション対策完了" を赤字で書く
+' - B列の "sqlX(...)" 部分だけを赤字＋太字（複数ヒット対応）
+' - ヒットした行の C列に "SQLインジェクション対策完了" を赤字で書く
 '
 ' 前提:
 '  - この xlsm に "エスケープ関数一覧" シートがあり、A2以降に エスケープ関数（例: sqlS, sqlN）を列挙していること
@@ -18,7 +18,7 @@ Public Sub RunMain()
     Dim prefixes As Collection
     Set prefixes = LoadPrefixesFromConfig()
     If prefixes.Count = 0 Then
-        MsgBox "Config シートの A2 以降に prefix（例: sqlS, sqlN）を1つ以上入力してください。", vbExclamation
+        MsgBox "エスケープ関数一覧 シートの A2 以降に prefix（例: sqlS, sqlN）を1つ以上入力してください。", vbExclamation
         Exit Sub
     End If
 
@@ -91,19 +91,19 @@ End Sub
 
 '============================================================
 ' 1シート分処理:
-' - D列を走査して sqlX(...) を装飾
-' - ヒット行のE列にメッセージ＆赤字
+' - B列を走査して sqlX(...) を装飾
+' - ヒット行のC列にメッセージ＆赤字
 '============================================================
 Private Sub ProcessOneSheet(ByVal ws As Worksheet, ByVal prefixes As Collection)
-    ' D列の最終行を取得（D列に何もなければスキップ）
+    ' B列の最終行を取得（B列に何もなければスキップ）
     Dim lastRow As Long
-    lastRow = ws.Cells(ws.Rows.Count, "D").End(xlUp).Row
+    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
     If lastRow < 1 Then Exit Sub
 
     Dim r As Long
-    For r = 1 To lastRow
+    For r = 4 To lastRow
         Dim cell As Range
-        Set cell = ws.Cells(r, "D")
+        Set cell = ws.Cells(r, "B")
 
         If Len(cell.Value2) > 0 Then
             Dim hit As Boolean
@@ -111,7 +111,7 @@ Private Sub ProcessOneSheet(ByVal ws As Worksheet, ByVal prefixes As Collection)
 
             If hit Then
                 Dim eCell As Range
-                Set eCell = ws.Cells(r, "E")
+                Set eCell = ws.Cells(r, "C")
                 'メッセージを変更したければ下記を編集
                 eCell.Value2 = "SQLインジェクション対策完了"
                 eCell.Font.Color = vbRed
@@ -192,7 +192,7 @@ Private Function MarkAllOccurrencesForOnePrefix(ByVal cell As Range, ByVal text 
 End Function
 
 '============================================================
-' Config シート A2:A(最終行) から prefix を読み込む
+' エスケープ関数一覧 シート A2:A(最終行) から prefix を読み込む
 ' - 空欄は無視
 '============================================================
 Private Function LoadPrefixesFromConfig() As Collection
@@ -200,7 +200,7 @@ Private Function LoadPrefixesFromConfig() As Collection
 
     Dim ws As Worksheet
     On Error Resume Next
-    Set ws = ThisWorkbook.Worksheets("Config")
+    Set ws = ThisWorkbook.Worksheets("エスケープ関数一覧")
     On Error GoTo 0
 
     If ws Is Nothing Then

@@ -10,7 +10,7 @@ Private Const SOURCE_TEXT_COL As Long = 3   ' C列
 Private Const MARK_COL As Long = 2          ' B列
 Private Const SECTION_HEADER_START_ROW As Long = 9
 Private Const BLOCK_STEP_NORMAL As Long = 5
-Private Const INDIVIDUAL_TEMPLATE_INSERT_COUNT As Long = 100
+Private Const INDIVIDUAL_TEMPLATE_INSERT_COUNT As Long = 50
 Private Const INDIVIDUAL_TEMPLATE_PREINSERT_MARGIN As Long = 50
 Private Const INDIVIDUAL_TEMPLATE_SOURCE_START_ROW As Long = 15
 Private Const INDIVIDUAL_TEMPLATE_SOURCE_ROW_COUNT As Long = 10
@@ -179,32 +179,83 @@ End Function
 
 Private Function IsCurrentSourceFeatureExactMatch(ByVal sheetName As String, ByVal featureName As String) As Boolean
     ' 現行ソースシート名から機能名相当部分を取り出し、入力機能名と完全一致で比較する
+    ' 例: 現行ソース（PHP）＜機能名＞
     Dim normalizedFeatureName As String
     Dim extractedFeatureName As String
+    Dim normalizedSheetName As String
 
     normalizedFeatureName = Trim$(featureName)
     If Len(normalizedFeatureName) = 0 Then Exit Function
 
     extractedFeatureName = ExtractFeatureNameFromCurrentSourceSheetName(sheetName)
-    If Len(extractedFeatureName) = 0 Then Exit Function
+    If Len(extractedFeatureName) > 0 Then
+        If StrComp(extractedFeatureName, normalizedFeatureName, vbTextCompare) = 0 Then
+            IsCurrentSourceFeatureExactMatch = True
+            Exit Function
+        End If
+    End If
 
-    IsCurrentSourceFeatureExactMatch = (StrComp(extractedFeatureName, normalizedFeatureName, vbTextCompare) = 0)
+    normalizedSheetName = Trim$(sheetName)
+
+    ' 現行ソース（PHP）＜機能名＞ / 現行ソース(PHP)<機能名> の形式にも対応
+    If StrComp(normalizedSheetName, "現行ソース（PHP）＜" & normalizedFeatureName & "＞", vbTextCompare) = 0 Or _
+       StrComp(normalizedSheetName, "現行ソース(PHP)＜" & normalizedFeatureName & "＞", vbTextCompare) = 0 Or _
+       StrComp(normalizedSheetName, "現行ソース（PHP）<" & normalizedFeatureName & ">", vbTextCompare) = 0 Or _
+       StrComp(normalizedSheetName, "現行ソース(PHP)<" & normalizedFeatureName & ">", vbTextCompare) = 0 Then
+        IsCurrentSourceFeatureExactMatch = True
+        Exit Function
+    End If
+
+    ' 角括弧がない連結形式にも対応
+    If StrComp(normalizedSheetName, "現行ソース（PHP）" & normalizedFeatureName, vbTextCompare) = 0 Or _
+       StrComp(normalizedSheetName, "現行ソース(PHP)" & normalizedFeatureName, vbTextCompare) = 0 Then
+        IsCurrentSourceFeatureExactMatch = True
+    End If
 End Function
 
 Private Function ExtractFeatureNameFromCurrentSourceSheetName(ByVal sheetName As String) As String
     ' 例:
-    ' - 現行ソース（PHP） -> PHP
-    ' - 現行ソース_PHP   -> PHP
-    ' - 現行ソースPHP    -> PHP
+    ' - 現行ソース（PHP）＜機能A＞ -> 機能A
+    ' - 現行ソース(PHP)<機能A>   -> 機能A
+    ' - 現行ソース（PHP）機能A    -> 機能A
     Dim token As String
 
-    token = Replace(sheetName, SHEET_KEY_CURRENT_SOURCE, vbNullString, 1, -1, vbTextCompare)
+    token = Trim$(sheetName)
+
+    ' 最優先: ＜...＞ / <...> で囲まれた部分を機能名として採用
+    ExtractFeatureNameFromCurrentSourceSheetName = ExtractWrappedValue(token, "＜", "＞")
+    If Len(ExtractFeatureNameFromCurrentSourceSheetName) = 0 Then
+        ExtractFeatureNameFromCurrentSourceSheetName = ExtractWrappedValue(token, "<", ">")
+    End If
+    If Len(ExtractFeatureNameFromCurrentSourceSheetName) > 0 Then
+        Exit Function
+    End If
+
+    token = Replace(token, SHEET_KEY_CURRENT_SOURCE, vbNullString, 1, -1, vbTextCompare)
+    token = Replace(token, "（PHP）", vbNullString, 1, -1, vbTextCompare)
+    token = Replace(token, "(PHP)", vbNullString, 1, -1, vbTextCompare)
+
     token = Trim$(token)
     token = TrimLeadingSeparators(token)
     token = TrimTrailingSeparators(token)
     token = UnwrapBracketPair(token)
 
     ExtractFeatureNameFromCurrentSourceSheetName = Trim$(token)
+End Function
+
+Private Function ExtractWrappedValue(ByVal sourceText As String, ByVal openToken As String, ByVal closeToken As String) As String
+    Dim openPos As Long
+    Dim closePos As Long
+
+    If Len(openToken) = 0 Or Len(closeToken) = 0 Then Exit Function
+
+    openPos = InStr(1, sourceText, openToken, vbTextCompare)
+    If openPos = 0 Then Exit Function
+
+    closePos = InStr(openPos + Len(openToken), sourceText, closeToken, vbTextCompare)
+    If closePos = 0 Then Exit Function
+
+    ExtractWrappedValue = Trim$(Mid$(sourceText, openPos + Len(openToken), closePos - openPos - Len(openToken)))
 End Function
 
 Private Function TrimLeadingSeparators(ByVal valueText As String) As String
@@ -549,7 +600,7 @@ End Sub
 
 Private Sub EnsureIndividualSheetWritableRow(ByVal ws As Worksheet, ByVal rowIndex As Long)
     ' A:Dが未結合の最初の行をα行とし、
-    ' 書き込み予定行が α-50 ～ α に入る場合は事前退避テンプレートを100行挿入する
+    ' 書き込み予定行が α-50 ～ α に入る場合は事前退避テンプレートを50行挿入する
     Dim alphaRow As Long
     Dim triggerStartRow As Long
     Dim insertAtRow As Long

@@ -37,7 +37,7 @@ Private Const SOURCE_START_ROW As Long = 8          ' 仕様にある開始行
 Private Const SOURCE_COL_A As Long = 1              ' A列: 作成するエビデンスシート名
 Private Const SOURCE_COL_B As Long = 2              ' B列: pendingB 用
 Private Const SOURCE_COL_C As Long = 3              ' C列: 確定トリガ
-Private Const EMPTY_STREAK_STOP_COUNT As Long = 20  ' A/B/C空行が連続したら走査終了
+Private Const EMPTY_STREAK_STOP_COUNT As Long = 100  ' A/B/C空行が連続したら走査終了
 
 ' ===== エビデンスシートへの書き込み（スロット） =====
 Private Const FIRST_DEST_ROW As Long = 3 ' slot0 の書き込み開始行
@@ -185,12 +185,12 @@ Public Sub RunMain()
 
     ' -------------------------
     ' 個別モード（【個別】）
-    ' 優先順:
-    ' 1) 【個別】referValue
-    ' 2) referValue
+    ' 参照元シート名: 【個別】referValue（完全一致）
+
+
     ' -------------------------
     If individualSourceWs Is Nothing Then
-        individualSummary = "個別モード: スキップ（参照元シートなし: 【個別】" & referValue & " / " & referValue & "）"
+        individualSummary = "個別モード: スキップ（参照元シートなし: 【個別】" & referValue & "）"
     Else
         individualOutputPath = ResolveOutputWorkbookPath(BuildOutputWorkbookPath(targetPath, expectedIndividualWorkbookName))
         Set targetWb = CreateEmptyOutputWorkbook(individualOutputPath, seedSheetName)
@@ -226,7 +226,7 @@ Public Sub RunMain()
     Else
         finalMessage = "処理対象の参照元シートが見つからなかったため、出力は作成されませんでした。" & vbCrLf & _
                        "参照元ブック: " & sourceWb.Name & vbCrLf & _
-                       "確認対象: " & commonSourceSheetName & " / 【個別】" & referValue & " / " & referValue
+                       "確認対象: " & commonSourceSheetName & " / 【個別】" & referValue
     End If
 
     GoTo SafeExit
@@ -727,16 +727,16 @@ Private Function FindWorksheetExact(ByVal wb As Workbook, ByVal sheetName As Str
 End Function
 
 Private Function FindIndividualSourceSheet(ByVal targetWb As Workbook, ByVal referValue As String) As Worksheet
-    ' 個別モードの優先順:
-    ' 1) 【個別】referValue
-    ' 2) referValue
+    ' 個別モードの参照元: 【個別】referValue（完全一致）
+
+
     Dim candidateName As String
 
     candidateName = "【個別】" & referValue
     Set FindIndividualSourceSheet = FindWorksheetExact(targetWb, candidateName)
-    If Not FindIndividualSourceSheet Is Nothing Then Exit Function
 
-    Set FindIndividualSourceSheet = FindWorksheetExact(targetWb, referValue)
+
+
 End Function
 
 ' ============================================================

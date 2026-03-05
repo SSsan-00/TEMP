@@ -31,7 +31,7 @@ Private Const OUTPUT_SOURCE_PREFIX As String = "現行ソース（PHP）"
 
 ' ===== セル書き込み先 =====
 Private Const TARGET_ALPHA_CELL As String = "BD1"
-Private Const TARGET_FEATURE_ID_CELL As String = "BD13"
+Private Const TARGET_FEATURE_ID_CELL As String = "BD3"
 Private Const TARGET_GAMMA_CELL As String = "C4"
 
 ' ===== 出力ファイル名 =====
@@ -178,7 +178,7 @@ Private Function PromptFeatureId() As String
     ' キャンセルまたは空文字は空で返し、呼び出し元で中断判断する。
     Dim s As String
 
-    s = InputBox("機能連番を入力してください（例: S999-99-99）", "機能連番入力")
+    s = InputBox("機能連番を入力してください（例: S99-999-99）", "機能連番入力")
     PromptFeatureId = Trim$(s)
 End Function
 
@@ -510,7 +510,7 @@ Private Sub FillCaseSheet( _
     ByVal featureId As String)
 
     ' 【共通】/【個別】シートの共通セル埋め。
-    ' 仕様: BD1 は β、BD13 は入力した機能連番。
+    ' 仕様: BD1 は β、BD3 は入力した機能連番。
     targetWs.Range(TARGET_ALPHA_CELL).Value = beta
     targetWs.Range(TARGET_FEATURE_ID_CELL).Value = featureId
 End Sub
