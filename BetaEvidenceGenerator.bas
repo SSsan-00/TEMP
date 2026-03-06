@@ -13,9 +13,10 @@ Option Explicit
 ' 3. マクロブックのREFERシートを参照して referValue を取得する
 ' 4. 参照元ブックの【共通】/【個別】参照元シートを走査する
 ' 5. 共通/個別それぞれの出力xlsxを新規作成する（同名時は連番）
-' 6. 共通モードでは A1-1-1 を独立シートとして出力する
-' 7. エビデンスシートは A1 テンプレを複製して作成する
-' 8. A1-1-1 の A3/B3 の 〇〇〇 を baseName に置換し、E/H列を規則で書き込む
+' 6. 出力対象シート名を任意入力し、空欄なら全シートを出力する
+' 7. 共通モードでは A1-1-1（指定時のみ）を独立シートとして出力する
+' 8. エビデンスシートは A1 テンプレを複製して作成する
+' 9. A1-1-1 の A3/B3 の 〇〇〇 を baseName に置換し、E/H列を規則で書き込む
 ' ============================================================
 
 ' ===== マクロブック内の固定シート名 =====
@@ -87,6 +88,11 @@ Public Sub RunMain()
     Dim commonOutputPath As String
     Dim individualOutputPath As String
     Dim seedSheetName As String
+    Dim outputSheetFilter As Object
+    Dim outputSheetFilterLabel As String
+    Dim commonCreatedSheetCount As Long
+    Dim individualCreatedSheetCount As Long
+    Dim commonHeaderCreated As Boolean
 
     ' Application状態は、エラー時でも必ず元に戻す
     Dim prevScreenUpdating As Boolean
@@ -117,6 +123,8 @@ Public Sub RunMain()
     End If
 
     mSlotHeight = PromptSlotHeightOrDefault(SLOT_HEIGHT)
+    Set outputSheetFilter = PromptOutputSheetFilter()
+    outputSheetFilterLabel = BuildOutputSheetFilterLabel(outputSheetFilter)
 
     ' 後続処理で共通/個別シート名や置換に使うため、拡張子なし名を作成する
     baseName = RemoveExtension(inputFileName)
@@ -166,8 +174,12 @@ Public Sub RunMain()
         commonOutputPath = ResolveOutputWorkbookPath(BuildOutputWorkbookPath(targetPath, expectedCommonWorkbookName))
         Set targetWb = CreateEmptyOutputWorkbook(commonOutputPath, seedSheetName)
 
-        ' 共通モードでは A1-1-1 を独立シートとして必ず作成する。
-        CreateCommonHeaderSheet targetWb, templateHeaderWs, baseName
+        commonCreatedSheetCount = 0
+        commonHeaderCreated = False
+        If IsSheetAllowedByFilter(TEMPLATE_HEADER_SHEET_NAME, outputSheetFilter) Then
+            CreateCommonHeaderSheet targetWb, templateHeaderWs, baseName
+            commonHeaderCreated = True
+        End If
 
         commonSummary = ProcessReferenceSheet( _
             sourceWs:=commonSourceWs, _
@@ -176,15 +188,26 @@ Public Sub RunMain()
             templateHeaderWs:=templateHeaderWs, _
             baseName:=baseName, _
             applyHeaderOverlay:=False, _
-            modeLabel:="共通")
+            modeLabel:="共通", _
+            outputSheetFilter:=outputSheetFilter, _
+            createdSheetCountOut:=commonCreatedSheetCount)
 
-        RemoveSeedSheetIfNeeded targetWb, seedSheetName
-        targetWb.Save
-        targetWb.Close SaveChanges:=True
-        Set targetWb = Nothing
+        If commonHeaderCreated Then
+            commonCreatedSheetCount = commonCreatedSheetCount + 1
+        End If
 
-        commonSummary = commonSummary & " / 出力: " & commonOutputPath
-        processedAnyMode = True
+        If commonCreatedSheetCount > 0 Then
+            RemoveSeedSheetIfNeeded targetWb, seedSheetName
+            targetWb.Save
+            targetWb.Close SaveChanges:=True
+            Set targetWb = Nothing
+
+            commonSummary = commonSummary & " / 出力: " & commonOutputPath
+            processedAnyMode = True
+        Else
+            DiscardOutputWorkbookAndFile targetWb, commonOutputPath
+            commonSummary = commonSummary & " / 出力対象シートなしのためファイル未出力"
+        End If
     End If
 
     ' -------------------------
@@ -198,6 +221,7 @@ Public Sub RunMain()
     Else
         individualOutputPath = ResolveOutputWorkbookPath(BuildOutputWorkbookPath(targetPath, expectedIndividualWorkbookName))
         Set targetWb = CreateEmptyOutputWorkbook(individualOutputPath, seedSheetName)
+        individualCreatedSheetCount = 0
 
         individualSummary = ProcessReferenceSheet( _
             sourceWs:=individualSourceWs, _
@@ -206,15 +230,22 @@ Public Sub RunMain()
             templateHeaderWs:=templateHeaderWs, _
             baseName:=baseName, _
             applyHeaderOverlay:=False, _
-            modeLabel:="個別")
+            modeLabel:="個別", _
+            outputSheetFilter:=outputSheetFilter, _
+            createdSheetCountOut:=individualCreatedSheetCount)
 
-        RemoveSeedSheetIfNeeded targetWb, seedSheetName
-        targetWb.Save
-        targetWb.Close SaveChanges:=True
-        Set targetWb = Nothing
+        If individualCreatedSheetCount > 0 Then
+            RemoveSeedSheetIfNeeded targetWb, seedSheetName
+            targetWb.Save
+            targetWb.Close SaveChanges:=True
+            Set targetWb = Nothing
 
-        individualSummary = individualSummary & " / 出力: " & individualOutputPath
-        processedAnyMode = True
+            individualSummary = individualSummary & " / 出力: " & individualOutputPath
+            processedAnyMode = True
+        Else
+            DiscardOutputWorkbookAndFile targetWb, individualOutputPath
+            individualSummary = individualSummary & " / 出力対象シートなしのためファイル未出力"
+        End If
     End If
 
     If processedAnyMode Then
@@ -223,14 +254,16 @@ Public Sub RunMain()
                        "入力ファイル名: " & inputFileName & vbCrLf & _
                        "baseName: " & baseName & vbCrLf & _
                        "REFER(F): " & referValue & vbCrLf & _
+                       "出力シート指定: " & outputSheetFilterLabel & vbCrLf & _
                        "想定ファイル名（共通）: " & expectedCommonWorkbookName & vbCrLf & _
                        "想定ファイル名（個別）: " & expectedIndividualWorkbookName & vbCrLf & vbCrLf & _
                        commonSummary & vbCrLf & _
                        individualSummary
     Else
-        finalMessage = "処理対象の参照元シートが見つからなかったため、出力は作成されませんでした。" & vbCrLf & _
+        finalMessage = "出力対象シートが見つからなかったため、出力は作成されませんでした。" & vbCrLf & _
                        "参照元ブック: " & sourceWb.Name & vbCrLf & _
-                       "確認対象: " & commonSourceSheetName & " / 【個別】" & referValue
+                       "確認対象: " & commonSourceSheetName & " / 【個別】" & referValue & vbCrLf & _
+                       "出力シート指定: " & outputSheetFilterLabel
     End If
 
     GoTo SafeExit
@@ -352,6 +385,81 @@ Private Function PromptSlotHeightOrDefault(ByVal defaultHeight As Long) As Long
     End If
 
     PromptSlotHeightOrDefault = CLng(numericValue)
+End Function
+
+Private Function PromptOutputSheetFilter() As Object
+    Dim inputText As String
+
+    inputText = InputBox( _
+        "出力するシート名をカンマ区切りで入力してください（任意）。" & vbCrLf & _
+        "例: A1,A2,B1" & vbCrLf & _
+        "空欄の場合は全シートを出力します。", _
+        "出力シート名（任意）")
+
+    Set PromptOutputSheetFilter = ParseOutputSheetFilter(inputText)
+End Function
+
+Private Function ParseOutputSheetFilter(ByVal rawInput As String) As Object
+    Dim normalizedText As String
+    Dim names As Variant
+    Dim nameText As String
+    Dim i As Long
+    Dim dict As Object
+
+    normalizedText = Replace(rawInput, "，", ",")
+    names = Split(normalizedText, ",")
+
+    Set dict = CreateObject("Scripting.Dictionary")
+    dict.CompareMode = vbBinaryCompare
+
+    For i = LBound(names) To UBound(names)
+        nameText = Trim$(CStr(names(i)))
+        If Len(nameText) > 0 Then
+            If Not dict.Exists(nameText) Then
+                dict.Add nameText, True
+            End If
+        End If
+    Next i
+
+    If dict.Count = 0 Then
+        Set ParseOutputSheetFilter = Nothing
+    Else
+        Set ParseOutputSheetFilter = dict
+    End If
+End Function
+
+Private Function BuildOutputSheetFilterLabel(ByVal outputSheetFilter As Object) As String
+    Dim key As Variant
+    Dim sheetNames As String
+
+    If outputSheetFilter Is Nothing Then
+        BuildOutputSheetFilterLabel = "全シート（指定なし）"
+        Exit Function
+    End If
+
+    For Each key In outputSheetFilter.Keys
+        If Len(sheetNames) > 0 Then
+            sheetNames = sheetNames & ", "
+        End If
+        sheetNames = sheetNames & CStr(key)
+    Next key
+
+    If Len(sheetNames) = 0 Then
+        BuildOutputSheetFilterLabel = "全シート（指定なし）"
+    Else
+        BuildOutputSheetFilterLabel = sheetNames
+    End If
+End Function
+
+Private Function IsSheetAllowedByFilter( _
+    ByVal sheetName As String, _
+    ByVal outputSheetFilter As Object) As Boolean
+
+    If outputSheetFilter Is Nothing Then
+        IsSheetAllowedByFilter = True
+    Else
+        IsSheetAllowedByFilter = outputSheetFilter.Exists(sheetName)
+    End If
 End Function
 
 Private Function OpenTargetWorkbook(ByVal workbookPath As String, Optional ByVal openReadOnly As Boolean = False) As Workbook
@@ -477,6 +585,26 @@ Private Sub RemoveSeedSheetIfNeeded(ByVal wb As Workbook, ByVal seedSheetName As
     If wb.Worksheets.Count <= 1 Then Exit Sub
 
     DeleteWorksheetIfExists wb, seedSheetName
+End Sub
+
+Private Sub DiscardOutputWorkbookAndFile( _
+    ByRef wb As Workbook, _
+    ByVal outputPath As String)
+
+    On Error Resume Next
+
+    If Not wb Is Nothing Then
+        wb.Close SaveChanges:=False
+        Set wb = Nothing
+    End If
+
+    If Len(Trim$(outputPath)) > 0 Then
+        If Len(Dir$(outputPath)) > 0 Then
+            Kill outputPath
+        End If
+    End If
+
+    On Error GoTo 0
 End Sub
 
 Private Sub CreateCommonHeaderSheet( _
@@ -806,7 +934,9 @@ Private Function ProcessReferenceSheet( _
     ByVal templateHeaderWs As Worksheet, _
     ByVal baseName As String, _
     ByVal applyHeaderOverlay As Boolean, _
-    ByVal modeLabel As String) As String
+    ByVal modeLabel As String, _
+    ByVal outputSheetFilter As Object, _
+    ByRef createdSheetCountOut As Long) As String
 
     ' 参照元シート（共通または個別）を走査し、A/E/Hのルールに従って
     ' エビデンスシートを作成・更新する
@@ -834,6 +964,7 @@ Private Function ProcessReferenceSheet( _
     Dim createdSheetCount As Long
     Dim slotWriteCount As Long
     Dim ignoredDataBeforeSheetCount As Long
+    Dim skippedByFilterCount As Long
 
     Dim maxRowA As Long
     Dim maxRowB As Long
@@ -865,6 +996,7 @@ Private Function ProcessReferenceSheet( _
     slotIndex = 0
     hasPendingB = False
     useHeaderTemplateForFirstSheet = applyHeaderOverlay
+    createdSheetCountOut = 0
 
     For rowOffset = 1 To UBound(sourceValuesA, 1)
         r = SOURCE_START_ROW + rowOffset - 1
@@ -897,31 +1029,39 @@ Private Function ProcessReferenceSheet( _
 
             aSheetName = NormalizeEvidenceSheetName(rawA, sourceWs.Name, r)
 
-            ' 共通モードの先頭1シートのみ A1-1-1 を使い、
-            ' それ以外は A1 を使う
-            If useHeaderTemplateForFirstSheet Then
-                Set templateWsForCreate = templateHeaderWs
+            If Not IsSheetAllowedByFilter(aSheetName, outputSheetFilter) Then
+                skippedByFilterCount = skippedByFilterCount + 1
+                Set currentEvidenceWs = Nothing
+                currentEvidenceSheetName = vbNullString
+                slotIndex = 0
+                hasPendingB = False
             Else
-                Set templateWsForCreate = templateBodyWs
-            End If
+                ' 共通モードの先頭1シートのみ A1-1-1 を使い、
+                ' それ以外は A1 を使う
+                If useHeaderTemplateForFirstSheet Then
+                    Set templateWsForCreate = templateHeaderWs
+                Else
+                    Set templateWsForCreate = templateBodyWs
+                End If
 
-            Set currentEvidenceWs = RecreateEvidenceSheetFromTemplate( _
-                targetWb:=targetWb, _
-                templateSourceWs:=templateWsForCreate, _
-                newSheetName:=aSheetName, _
-                currentSourceSheetName:=sourceWs.Name)
+                Set currentEvidenceWs = RecreateEvidenceSheetFromTemplate( _
+                    targetWb:=targetWb, _
+                    templateSourceWs:=templateWsForCreate, _
+                    newSheetName:=aSheetName, _
+                    currentSourceSheetName:=sourceWs.Name)
 
-            createdSheetCount = createdSheetCount + 1
-            currentEvidenceSheetName = aSheetName
+                createdSheetCount = createdSheetCount + 1
+                currentEvidenceSheetName = aSheetName
 
-            ' シートが変わったら、スロットと pendingB を新しいシート用に初期化する
-            slotIndex = 0
-            hasPendingB = False
+                ' シートが変わったら、スロットと pendingB を新しいシート用に初期化する
+                slotIndex = 0
+                hasPendingB = False
 
-            ' 共通モードの先頭1シートのみ、〇〇〇 を baseName に置換する
-            If useHeaderTemplateForFirstSheet Then
-                ReplaceHeaderPlaceholderInSheet currentEvidenceWs, baseName
-                useHeaderTemplateForFirstSheet = False
+                ' 共通モードの先頭1シートのみ、〇〇〇 を baseName に置換する
+                If useHeaderTemplateForFirstSheet Then
+                    ReplaceHeaderPlaceholderInSheet currentEvidenceWs, baseName
+                    useHeaderTemplateForFirstSheet = False
+                End If
             End If
         End If
 
@@ -967,11 +1107,16 @@ Private Function ProcessReferenceSheet( _
         FlushPendingBIfNeeded currentEvidenceWs, slotIndex, hasPendingB, pendingB, slotWriteCount
     End If
 
+    createdSheetCountOut = createdSheetCount
+
     ProcessReferenceSheet = modeLabel & "モード: 完了（参照元=" & sourceWs.Name & _
                            ", 作成シート数=" & CStr(createdSheetCount) & _
                            ", スロット書込数=" & CStr(slotWriteCount) & _
                            IIf(ignoredDataBeforeSheetCount > 0, _
                                ", 先行E/Hスキップ行=" & CStr(ignoredDataBeforeSheetCount), _
+                               vbNullString) & _
+                           IIf(skippedByFilterCount > 0, _
+                               ", フィルタ除外シート=" & CStr(skippedByFilterCount), _
                                vbNullString) & ")"
 End Function
 

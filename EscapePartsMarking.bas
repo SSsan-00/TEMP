@@ -1,13 +1,13 @@
 Attribute VB_Name = "EscapePartsMarking"
 Option Explicit
 
-Private Const DEFAULT_COMPLETION_MESSAGE As String = "SQLインジェクション対策完了"
+Private Const DEFAULT_COMPLETION_MESSAGE As String = "SQLインジェクション対策済み"  ' ここを書き換えるとC列メッセージを変更できます
 
 '============================================================
 ' xlsmツール（別ファイル）から、選択した xlsx を開いて加工するマクロ
-' - "A1-1-1" シートのみを対象に処理する
+' - シート名に "A1-1-1" を含むシートのみを対象に処理する
 ' - B列の "sqlX(...)" 部分だけを赤字＋太字（複数ヒット対応）
-' - ヒットした行の C列に指定メッセージ（既定: "SQLインジェクション対策完了"）を赤字で書く
+' - ヒットした行の C列に固定メッセージ（既定: "SQLインジェクション対策済み"）を赤字で書く
 '
 ' 前提:
 '  - このモジュール内の LoadPrefixesFromCode へ エスケープ関数（例: sqlS, sqlN）を列挙していること
@@ -18,15 +18,11 @@ Public Sub RunMain()
     If targetPath = "" Then Exit Sub ' キャンセル
 
     Dim prefixes As Collection
-    Dim hitMessage As String
-
     Set prefixes = LoadPrefixesFromCode()
     If prefixes.Count = 0 Then
         MsgBox "LoadPrefixesFromCode に prefix（例: sqlS, sqlN）を1つ以上設定してください。", vbExclamation
         Exit Sub
     End If
-
-    hitMessage = PromptHitMessageOrDefault(DEFAULT_COMPLETION_MESSAGE)
 
     Dim app As Application
     Set app = Application
@@ -53,28 +49,29 @@ Public Sub RunMain()
     Set wb = app.Workbooks.Open(Filename:=targetPath, ReadOnly:=False)
 
     '============================================================
-    ' ★ "A1-1-1" シートのみ処理する(シート名が異なるなら適宜変更)
+    ' ★ シート名に "A1-1-1" を含むシートのみ処理する
     '============================================================
     Dim ws As Worksheet
-    Set ws = Nothing
+    Dim processedSheetCount As Long
 
-    On Error Resume Next
-    Set ws = wb.Worksheets("A1-1-1")
-    On Error GoTo 0
+    For Each ws In wb.Worksheets
+        If InStr(1, ws.Name, "A1-1-1", vbBinaryCompare) > 0 Then
+            ProcessOneSheet ws, prefixes, DEFAULT_COMPLETION_MESSAGE
+            processedSheetCount = processedSheetCount + 1
+        End If
+    Next ws
 
-    If ws Is Nothing Then
+    If processedSheetCount = 0 Then
         wb.Close SaveChanges:=False
-        MsgBox "対象ファイルに「A1-1-1」シートが存在しませんでした。", vbExclamation
+        MsgBox "対象ファイルに「A1-1-1」を含むシートが存在しませんでした。", vbExclamation
         GoTo CleanExit
     End If
-
-    ProcessOneSheet ws, prefixes, hitMessage
 
     wb.Save
     wb.Close SaveChanges:=False
 
     MsgBox "完了しました。" & vbCrLf & _
-           "「A1-1-1」シートを更新しました:" & vbCrLf & targetPath, vbInformation
+           "「A1-1-1」を含むシートを更新しました（件数: " & CStr(processedSheetCount) & "）:" & vbCrLf & targetPath, vbInformation
 
 CleanExit:
     app.ScreenUpdating = prevScreenUpdating
@@ -98,7 +95,7 @@ End Sub
 '============================================================
 ' 1シート分処理:
 ' - B列を走査して sqlX(...) を装飾
-' - ヒット行のC列にメッセージ＆赤字
+' - ヒット行のC列に固定メッセージ＆赤字
 '============================================================
 Private Sub ProcessOneSheet(ByVal ws As Worksheet, ByVal prefixes As Collection, ByVal hitMessage As String)
     ' B列の最終行を取得（B列に何もなければスキップ）
@@ -125,21 +122,6 @@ Private Sub ProcessOneSheet(ByVal ws As Worksheet, ByVal prefixes As Collection,
     Next r
 End Sub
 
-Private Function PromptHitMessageOrDefault(ByVal defaultMessage As String) As String
-    Dim inputText As String
-
-    inputText = InputBox( _
-        "ヒット行のC列に記載するメッセージを入力してください（空欄は既定値）。", _
-        "C列メッセージ", _
-        defaultMessage)
-
-    inputText = Trim$(inputText)
-    If Len(inputText) = 0 Then
-        PromptHitMessageOrDefault = defaultMessage
-    Else
-        PromptHitMessageOrDefault = inputText
-    End If
-End Function
 
 '============================================================
 ' セル内の複数パターンをすべて装飾する
