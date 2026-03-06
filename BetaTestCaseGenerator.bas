@@ -322,6 +322,10 @@ Private Function FindReferMatches( _
     Dim betaText As String
     Dim gammaText As String
 
+    Dim alphaValues As Variant
+    Dim betaValues As Variant
+    Dim gammaValues As Variant
+
     Dim record(1 To 4) As Variant
 
     Set results = New Collection
@@ -336,8 +340,13 @@ Private Function FindReferMatches( _
         Exit Function
     End If
 
+    ' COMアクセス回数を減らすため、必要列を配列へ読み込む
+    alphaValues = ReadColumnValues(referWs, alphaColIndex, 1, lastRow)
+    betaValues = ReadColumnValues(referWs, betaColIndex, 1, lastRow)
+    gammaValues = ReadColumnValues(referWs, gammaColIndex, 1, lastRow)
+
     For r = 1 To lastRow
-        alphaRaw = referWs.Cells(r, alphaColIndex).Value
+        alphaRaw = alphaValues(r, 1)
         If IsError(alphaRaw) Then
             Err.Raise vbObjectError + 6201, "FindReferMatches", _
                       "REFER の " & REFER_ALPHA_COL_LETTER & " 列にエラー値があります（行: " & CStr(r) & "）。"
@@ -348,8 +357,8 @@ Private Function FindReferMatches( _
 
         ' 仕様: 機能連番を含む行をヒット（部分一致）
         If InStr(1, alphaText, featureId, vbTextCompare) > 0 Then
-            betaRaw = referWs.Cells(r, betaColIndex).Value
-            gammaRaw = referWs.Cells(r, gammaColIndex).Value
+            betaRaw = betaValues(r, 1)
+            gammaRaw = gammaValues(r, 1)
 
             If IsError(betaRaw) Then
                 Err.Raise vbObjectError + 6202, "FindReferMatches", _
@@ -390,6 +399,28 @@ ContinueRow:
     Set FindReferMatches = results
 End Function
 
+Private Function ReadColumnValues( _
+    ByVal ws As Worksheet, _
+    ByVal columnIndex As Long, _
+    ByVal startRow As Long, _
+    ByVal endRow As Long) As Variant
+
+    Dim rawValues As Variant
+    Dim singleCell(1 To 1, 1 To 1) As Variant
+
+    If endRow < startRow Then
+        endRow = startRow
+    End If
+
+    rawValues = ws.Range(ws.Cells(startRow, columnIndex), ws.Cells(endRow, columnIndex)).Value
+
+    If startRow = endRow Then
+        singleCell(1, 1) = rawValues
+        ReadColumnValues = singleCell
+    Else
+        ReadColumnValues = rawValues
+    End If
+End Function
 Private Function ResolvePrimaryAlpha( _
     ByVal matches As Collection, _
     ByRef warningMessage As String) As String

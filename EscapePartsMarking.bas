@@ -1,14 +1,16 @@
 Attribute VB_Name = "EscapePartsMarking"
 Option Explicit
 
+Private Const DEFAULT_COMPLETION_MESSAGE As String = "SQLインジェクション対策完了"
+
 '============================================================
 ' xlsmツール（別ファイル）から、選択した xlsx を開いて加工するマクロ
 ' - "A1-1-1" シートのみを対象に処理する
 ' - B列の "sqlX(...)" 部分だけを赤字＋太字（複数ヒット対応）
-' - ヒットした行の C列に "SQLインジェクション対策完了" を赤字で書く
+' - ヒットした行の C列に指定メッセージ（既定: "SQLインジェクション対策完了"）を赤字で書く
 '
 ' 前提:
-'  - この xlsm に "エスケープ関数一覧" シートがあり、A2以降に エスケープ関数（例: sqlS, sqlN）を列挙していること
+'  - このモジュール内の LoadPrefixesFromCode へ エスケープ関数（例: sqlS, sqlN）を列挙していること
 '============================================================
 Public Sub RunMain()
     Dim targetPath As String
@@ -16,11 +18,15 @@ Public Sub RunMain()
     If targetPath = "" Then Exit Sub ' キャンセル
 
     Dim prefixes As Collection
-    Set prefixes = LoadPrefixesFromConfig()
+    Dim hitMessage As String
+
+    Set prefixes = LoadPrefixesFromCode()
     If prefixes.Count = 0 Then
-        MsgBox "エスケープ関数一覧 シートの A2 以降に prefix（例: sqlS, sqlN）を1つ以上入力してください。", vbExclamation
+        MsgBox "LoadPrefixesFromCode に prefix（例: sqlS, sqlN）を1つ以上設定してください。", vbExclamation
         Exit Sub
     End If
+
+    hitMessage = PromptHitMessageOrDefault(DEFAULT_COMPLETION_MESSAGE)
 
     Dim app As Application
     Set app = Application
@@ -62,7 +68,7 @@ Public Sub RunMain()
         GoTo CleanExit
     End If
 
-    ProcessOneSheet ws, prefixes
+    ProcessOneSheet ws, prefixes, hitMessage
 
     wb.Save
     wb.Close SaveChanges:=False
@@ -94,7 +100,7 @@ End Sub
 ' - B列を走査して sqlX(...) を装飾
 ' - ヒット行のC列にメッセージ＆赤字
 '============================================================
-Private Sub ProcessOneSheet(ByVal ws As Worksheet, ByVal prefixes As Collection)
+Private Sub ProcessOneSheet(ByVal ws As Worksheet, ByVal prefixes As Collection, ByVal hitMessage As String)
     ' B列の最終行を取得（B列に何もなければスキップ）
     Dim lastRow As Long
     lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
@@ -112,13 +118,28 @@ Private Sub ProcessOneSheet(ByVal ws As Worksheet, ByVal prefixes As Collection)
             If hit Then
                 Dim eCell As Range
                 Set eCell = ws.Cells(r, "C")
-                'メッセージを変更したければ下記を編集
-                eCell.Value2 = "SQLインジェクション対策完了"
+                eCell.Value2 = hitMessage
                 eCell.Font.Color = vbRed
             End If
         End If
     Next r
 End Sub
+
+Private Function PromptHitMessageOrDefault(ByVal defaultMessage As String) As String
+    Dim inputText As String
+
+    inputText = InputBox( _
+        "ヒット行のC列に記載するメッセージを入力してください（空欄は既定値）。", _
+        "C列メッセージ", _
+        defaultMessage)
+
+    inputText = Trim$(inputText)
+    If Len(inputText) = 0 Then
+        PromptHitMessageOrDefault = defaultMessage
+    Else
+        PromptHitMessageOrDefault = inputText
+    End If
+End Function
 
 '============================================================
 ' セル内の複数パターンをすべて装飾する
@@ -132,16 +153,21 @@ End Sub
 '============================================================
 Private Function MarkSqlPartsInCell(ByVal cell As Range, ByVal prefixes As Collection) As Boolean
     Dim text As String
+    Dim anyHit As Boolean
+    Dim i As Long
+    Dim prefix As String
+    Dim prefixCount As Long
+
     text = CStr(cell.Value2)
 
-    Dim anyHit As Boolean
+    ' 開き括弧が無い文字列は prefix(...) パターンを含まない
+    If InStr(1, text, "(", vbBinaryCompare) = 0 Then Exit Function
+
     anyHit = False
+    prefixCount = prefixes.Count
 
-    Dim i As Long
-    For i = 1 To prefixes.Count
-        Dim prefix As String
+    For i = 1 To prefixCount
         prefix = CStr(prefixes(i))
-
         anyHit = MarkAllOccurrencesForOnePrefix(cell, text, prefix) Or anyHit
     Next i
 
@@ -192,35 +218,26 @@ Private Function MarkAllOccurrencesForOnePrefix(ByVal cell As Range, ByVal text 
 End Function
 
 '============================================================
-' エスケープ関数一覧 シート A2:A(最終行) から prefix を読み込む
-' - 空欄は無視
+' ソースコード内のリストから prefix を読み込む
+' - 追加したい場合は defaultPrefixes の配列へ追記
 '============================================================
-Private Function LoadPrefixesFromConfig() As Collection
+Private Function LoadPrefixesFromCode() As Collection
     Dim prefixes As New Collection
+    Dim defaultPrefixes As Variant
+    Dim i As Long
+    Dim v As String
 
-    Dim ws As Worksheet
-    On Error Resume Next
-    Set ws = ThisWorkbook.Worksheets("エスケープ関数一覧")
-    On Error GoTo 0
+    ' ここにエスケープ関数名を追加する
+    defaultPrefixes = Array("sqlS", "sqlN")
 
-    If ws Is Nothing Then
-        Set LoadPrefixesFromConfig = prefixes
-        Exit Function
-    End If
-
-    Dim lastRow As Long
-    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
-
-    Dim r As Long
-    For r = 2 To lastRow
-        Dim v As String
-        v = Trim$(CStr(ws.Cells(r, "A").Value2))
+    For i = LBound(defaultPrefixes) To UBound(defaultPrefixes)
+        v = Trim$(CStr(defaultPrefixes(i)))
         If v <> "" Then
             prefixes.Add v
         End If
-    Next r
+    Next i
 
-    Set LoadPrefixesFromConfig = prefixes
+    Set LoadPrefixesFromCode = prefixes
 End Function
 
 '============================================================
@@ -244,4 +261,3 @@ Private Function PickExcelFilePath() As String
         PickExcelFilePath = .SelectedItems(1)
     End With
 End Function
-

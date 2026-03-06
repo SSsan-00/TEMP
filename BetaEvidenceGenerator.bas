@@ -15,7 +15,7 @@ Option Explicit
 ' 5. ‹¤’Ê/ŒÂ•Ê‚»‚ê‚¼‚ê‚Ìo—Íxlsx‚ğV‹Kì¬‚·‚éi“¯–¼‚Í˜A”Ôj
 ' 6. ‹¤’Êƒ‚[ƒh‚Å‚Í A1-1-1 ‚ğ“Æ—§ƒV[ƒg‚Æ‚µ‚Äo—Í‚·‚é
 ' 7. ƒGƒrƒfƒ“ƒXƒV[ƒg‚Í A1 ƒeƒ“ƒvƒŒ‚ğ•¡»‚µ‚Äì¬‚·‚é
-' 8. A1-1-1 ‚Ì A3/B3 ‚Ì ZZZ ‚ğ baseName ‚É’uŠ·‚µAB/C—ñ‚ğ‹K‘¥‚Å‘‚«‚Ş
+' 8. A1-1-1 ‚Ì A3/B3 ‚Ì ZZZ ‚ğ baseName ‚É’uŠ·‚µAE/H—ñ‚ğ‹K‘¥‚Å‘‚«‚Ş
 ' ============================================================
 
 ' ===== ƒ}ƒNƒƒuƒbƒN“à‚ÌŒÅ’èƒV[ƒg–¼ =====
@@ -35,13 +35,13 @@ Private Const REFER_ALPHA_COL_LETTER As String = "J" ' ƒ¿iŠg’£q‚È‚µŒ³•¶š—ñj‚
 ' ===== QÆŒ³ƒV[ƒg‚Ì‘–¸ğŒ =====
 Private Const SOURCE_START_ROW As Long = 8          ' d—l‚É‚ ‚éŠJns
 Private Const SOURCE_COL_A As Long = 1              ' A—ñ: ì¬‚·‚éƒGƒrƒfƒ“ƒXƒV[ƒg–¼
-Private Const SOURCE_COL_B As Long = 2              ' B—ñ: pendingB —p
-Private Const SOURCE_COL_C As Long = 3              ' C—ñ: Šm’èƒgƒŠƒK
-Private Const EMPTY_STREAK_STOP_COUNT As Long = 100  ' A/B/C‹ós‚ª˜A‘±‚µ‚½‚ç‘–¸I—¹
+Private Const SOURCE_COL_B As Long = 5              ' E—ñ: pendingB —p
+Private Const SOURCE_COL_C As Long = 8              ' H—ñ: Šm’èƒgƒŠƒK
+Private Const EMPTY_STREAK_STOP_COUNT As Long = 100  ' A/E/H‹ós‚ª˜A‘±‚µ‚½‚ç‘–¸I—¹
 
 ' ===== ƒGƒrƒfƒ“ƒXƒV[ƒg‚Ö‚Ì‘‚«‚İiƒXƒƒbƒgj =====
 Private Const FIRST_DEST_ROW As Long = 3 ' slot0 ‚Ì‘‚«‚İŠJns
-Private Const SLOT_HEIGHT As Long = 30   ' 30s‚İ
+Private Const SLOT_HEIGHT As Long = 30   ' Šù’è’l: 30s‚İ
 Private Const DEST_COL_A As Long = 1     ' ‘‚«‚İæ A—ñ
 Private Const DEST_COL_B As Long = 2     ' ‘‚«‚İæ B—ñ
 
@@ -50,6 +50,8 @@ Private Const HEADER_PLACEHOLDER As String = "ZZZ"
 
 ' ===== Office’è”‚ğ”’l‚Åˆµ‚¤iQÆİ’è‚ÉˆË‘¶‚µ‚É‚­‚­‚·‚é‚½‚ßj =====
 Private Const FILE_DIALOG_PICKER As Long = 3 ' msoFileDialogFilePicker
+
+Private mSlotHeight As Long ' ƒXƒƒbƒgsƒIƒtƒZƒbƒgi–¢w’è‚ÍŠù’è’l‚ğg—pj
 
 ' ============================================================
 ' ƒGƒ“ƒgƒŠƒ|ƒCƒ“ƒg
@@ -113,6 +115,8 @@ Public Sub RunMain()
         MsgBox "ˆ—‚ğƒLƒƒƒ“ƒZƒ‹‚µ‚Ü‚µ‚½i“ü—Íƒtƒ@ƒCƒ‹–¼‚ª–¢“ü—Í‚Å‚·jB", vbInformation
         Exit Sub
     End If
+
+    mSlotHeight = PromptSlotHeightOrDefault(SLOT_HEIGHT)
 
     ' Œã‘±ˆ—‚Å‹¤’Ê/ŒÂ•ÊƒV[ƒg–¼‚â’uŠ·‚Ég‚¤‚½‚ßAŠg’£q‚È‚µ–¼‚ğì¬‚·‚é
     baseName = RemoveExtension(inputFileName)
@@ -315,6 +319,39 @@ Private Function PromptInputFileName() As String
 
     s = InputBox("“ü—Íƒtƒ@ƒCƒ‹–¼‚ğ“ü—Í‚µ‚Ä‚­‚¾‚³‚¢i—á: menu/mainmenu.phpj", "“ü—Íƒtƒ@ƒCƒ‹–¼")
     PromptInputFileName = Trim$(s)
+End Function
+
+Private Function PromptSlotHeightOrDefault(ByVal defaultHeight As Long) As Long
+    ' ƒXƒƒbƒg‚ÌsƒIƒtƒZƒbƒg‚ğó‚¯æ‚éi‹ó—“‚ÍŠù’è’lj
+    Dim inputText As String
+    Dim numericValue As Double
+
+    inputText = InputBox( _
+        "ƒXƒƒbƒg‚ÌsƒIƒtƒZƒbƒg‚ğ“ü—Í‚µ‚Ä‚­‚¾‚³‚¢i‹ó—“‚ÍŠù’è’l " & CStr(defaultHeight) & "jB" & vbCrLf & _
+        "—á: 30", _
+        "ƒXƒƒbƒgsƒIƒtƒZƒbƒg", _
+        CStr(defaultHeight))
+
+    inputText = Trim$(inputText)
+    If Len(inputText) = 0 Then
+        PromptSlotHeightOrDefault = defaultHeight
+        Exit Function
+    End If
+
+    If Not IsNumeric(inputText) Then
+        MsgBox "ƒXƒƒbƒgsƒIƒtƒZƒbƒg‚ª”’l‚Å‚Í‚È‚¢‚½‚ßAŠù’è’l " & CStr(defaultHeight) & " ‚ğg—p‚µ‚Ü‚·B", vbExclamation
+        PromptSlotHeightOrDefault = defaultHeight
+        Exit Function
+    End If
+
+    numericValue = CDbl(inputText)
+    If numericValue <= 0 Or numericValue <> Fix(numericValue) Then
+        MsgBox "ƒXƒƒbƒgsƒIƒtƒZƒbƒg‚Í1ˆÈã‚Ì®”‚Å“ü—Í‚µ‚Ä‚­‚¾‚³‚¢BŠù’è’l " & CStr(defaultHeight) & " ‚ğg—p‚µ‚Ü‚·B", vbExclamation
+        PromptSlotHeightOrDefault = defaultHeight
+        Exit Function
+    End If
+
+    PromptSlotHeightOrDefault = CLng(numericValue)
 End Function
 
 Private Function OpenTargetWorkbook(ByVal workbookPath As String, Optional ByVal openReadOnly As Boolean = False) As Workbook
@@ -688,9 +725,28 @@ Private Function ToTwoDigitStringStrict( _
     ByVal valueLabel As String) As String
 
     Dim numericValue As Double
+    Dim normalizedText As String
 
+    ' d—l: REFER‚ÌD—ñ(ƒÀ)‚ªNULL/‹ó‚Ìê‡‚Í "01" ‚ğÌ—p‚·‚é
     If IsEmpty(valueD) Or IsNull(valueD) Then
-        Err.Raise vbObjectError + 2126, "ToTwoDigitStringStrict", valueLabel & " ‚ª‹ó‚Å‚·B"
+        ToTwoDigitStringStrict = "01"
+        Exit Function
+    End If
+
+    If VarType(valueD) = vbString Then
+        normalizedText = Trim$(CStr(valueD))
+
+        If Len(normalizedText) = 0 Then
+            ToTwoDigitStringStrict = "01"
+            Exit Function
+        End If
+
+        If StrComp(normalizedText, "NULL", vbTextCompare) = 0 Then
+            ToTwoDigitStringStrict = "01"
+            Exit Function
+        End If
+
+        valueD = normalizedText
     End If
 
     If Not IsNumeric(valueD) Then
@@ -752,7 +808,7 @@ Private Function ProcessReferenceSheet( _
     ByVal applyHeaderOverlay As Boolean, _
     ByVal modeLabel As String) As String
 
-    ' QÆŒ³ƒV[ƒgi‹¤’Ê‚Ü‚½‚ÍŒÂ•Êj‚ğ‘–¸‚µAA/B/C‚Ìƒ‹[ƒ‹‚É]‚Á‚Ä
+    ' QÆŒ³ƒV[ƒgi‹¤’Ê‚Ü‚½‚ÍŒÂ•Êj‚ğ‘–¸‚µAA/E/H‚Ìƒ‹[ƒ‹‚É]‚Á‚Ä
     ' ƒGƒrƒfƒ“ƒXƒV[ƒg‚ğì¬EXV‚·‚é
     Dim r As Long
     Dim emptyStreak As Long
@@ -779,7 +835,30 @@ Private Function ProcessReferenceSheet( _
     Dim slotWriteCount As Long
     Dim ignoredDataBeforeSheetCount As Long
 
-    r = SOURCE_START_ROW
+    Dim maxRowA As Long
+    Dim maxRowB As Long
+    Dim maxRowC As Long
+    Dim scanEndRow As Long
+    Dim sourceValuesA As Variant
+    Dim sourceValuesB As Variant
+    Dim sourceValuesC As Variant
+    Dim rowOffset As Long
+
+    maxRowA = GetLastUsedRowInColumn(sourceWs, SOURCE_COL_A)
+    maxRowB = GetLastUsedRowInColumn(sourceWs, SOURCE_COL_B)
+    maxRowC = GetLastUsedRowInColumn(sourceWs, SOURCE_COL_C)
+
+    scanEndRow = maxRowA
+    If maxRowB > scanEndRow Then scanEndRow = maxRowB
+    If maxRowC > scanEndRow Then scanEndRow = maxRowC
+    If scanEndRow < SOURCE_START_ROW Then scanEndRow = SOURCE_START_ROW
+
+    ' ƒ‹[ƒv’†‚ÌƒZƒ‹QÆ‚ğŒ¸‚ç‚·‚½‚ßA•K—v—ñ‚ğ”z—ñ‚Ö“Ç‚İ‚Ş
+    scanEndRow = scanEndRow + EMPTY_STREAK_STOP_COUNT
+    sourceValuesA = ReadColumnValuesFromRow(sourceWs, SOURCE_COL_A, SOURCE_START_ROW, scanEndRow)
+    sourceValuesB = ReadColumnValuesFromRow(sourceWs, SOURCE_COL_B, SOURCE_START_ROW, scanEndRow)
+    sourceValuesC = ReadColumnValuesFromRow(sourceWs, SOURCE_COL_C, SOURCE_START_ROW, scanEndRow)
+
     emptyStreak = 0
     Set currentEvidenceWs = Nothing
     currentEvidenceSheetName = vbNullString
@@ -787,15 +866,17 @@ Private Function ProcessReferenceSheet( _
     hasPendingB = False
     useHeaderTemplateForFirstSheet = applyHeaderOverlay
 
-    Do While emptyStreak < EMPTY_STREAK_STOP_COUNT
-        rawA = sourceWs.Cells(r, SOURCE_COL_A).Value
-        rawB = sourceWs.Cells(r, SOURCE_COL_B).Value
-        rawC = sourceWs.Cells(r, SOURCE_COL_C).Value
+    For rowOffset = 1 To UBound(sourceValuesA, 1)
+        r = SOURCE_START_ROW + rowOffset - 1
+
+        rawA = sourceValuesA(rowOffset, 1)
+        rawB = sourceValuesB(rowOffset, 1)
+        rawC = sourceValuesC(rowOffset, 1)
 
         ' ƒGƒ‰[’l‚ª•´‚ê‚Ä‚¢‚é‚ÆŒ´ˆö‚ª•ª‚©‚è‚É‚­‚­‚È‚é‚½‚ßAs”Ô†•t‚«‚Å‘¦’†’f‚·‚é
         EnsureNotErrorValue rawA, sourceWs.Name, r, "A"
-        EnsureNotErrorValue rawB, sourceWs.Name, r, "B"
-        EnsureNotErrorValue rawC, sourceWs.Name, r, "C"
+        EnsureNotErrorValue rawB, sourceWs.Name, r, "E"
+        EnsureNotErrorValue rawC, sourceWs.Name, r, "H"
 
         hasA = HasValueForSourceCell(rawA)
         hasB = HasValueForSourceCell(rawB)
@@ -844,7 +925,7 @@ Private Function ProcessReferenceSheet( _
             End If
         End If
 
-        ' B/C ‚ÍuŒ»İ‚ÌƒGƒrƒfƒ“ƒXƒV[ƒgv‚ªŒˆ‚Ü‚Á‚Ä‚¢‚éê‡‚É‚Ì‚İˆ—‚ğs‚¤
+        ' E/H ‚ÍuŒ»İ‚ÌƒGƒrƒfƒ“ƒXƒV[ƒgv‚ªŒˆ‚Ü‚Á‚Ä‚¢‚éê‡‚É‚Ì‚İˆ—‚ğs‚¤
         ' A‚ª‚Ü‚¾ˆê“x‚ào‚Ä‚¢‚È‚¢ê‡‚ÍAd—l‚É•K—v‚È‘‚«‚İæ‚ª–¢Šm’è‚È‚Ì‚ÅƒXƒLƒbƒv‚·‚é
         If hasB Or hasC Then
             If currentEvidenceWs Is Nothing Then
@@ -876,8 +957,10 @@ Private Function ProcessReferenceSheet( _
             End If
         End If
 
-        r = r + 1
-    Loop
+        If emptyStreak >= EMPTY_STREAK_STOP_COUNT Then
+            Exit For
+        End If
+    Next rowOffset
 
     ' ‘–¸I—¹‚É‚à pendingB ‚ªc‚Á‚Ä‚¢‚ê‚ÎAÅŒã‚Ì1Œ‚ğæ‚è‚±‚Ú‚³‚È‚¢‚æ‚¤Šm’è‚³‚¹‚é
     If Not currentEvidenceWs Is Nothing Then
@@ -888,7 +971,7 @@ Private Function ProcessReferenceSheet( _
                            ", ì¬ƒV[ƒg”=" & CStr(createdSheetCount) & _
                            ", ƒXƒƒbƒg‘”=" & CStr(slotWriteCount) & _
                            IIf(ignoredDataBeforeSheetCount > 0, _
-                               ", æsB/CƒXƒLƒbƒvs=" & CStr(ignoredDataBeforeSheetCount), _
+                               ", æsE/HƒXƒLƒbƒvs=" & CStr(ignoredDataBeforeSheetCount), _
                                vbNullString) & ")"
 End Function
 
@@ -981,7 +1064,7 @@ Private Sub ReplaceHeaderPlaceholderInSheet( _
 End Sub
 
 ' ============================================================
-' QÆŒ³ A/B/C ‚Ì“Ç‚İæ‚è•â•
+' QÆŒ³ A/E/H ‚Ì“Ç‚İæ‚è•â•
 ' ============================================================
 
 Private Sub EnsureNotErrorValue( _
@@ -998,7 +1081,7 @@ Private Sub EnsureNotErrorValue( _
 End Sub
 
 Private Function HasValueForSourceCell(ByVal cellValue As Variant) As Boolean
-    ' A/B/C—ñ‚Ìu’l‚ ‚è”»’èvB
+    ' A/E/H—ñ‚Ìu’l‚ ‚è”»’èvB
     ' •¶š—ñ‚Í Trim Œã‚É‹ó‚È‚ç‹óˆµ‚¢A”’l‚Í 0 ‚Å‚à’l‚ ‚èˆµ‚¢‚É‚·‚é
     If IsEmpty(cellValue) Then Exit Function
     If IsNull(cellValue) Then Exit Function
@@ -1007,6 +1090,40 @@ Private Function HasValueForSourceCell(ByVal cellValue As Variant) As Boolean
         HasValueForSourceCell = (Len(Trim$(CStr(cellValue))) > 0)
     Else
         HasValueForSourceCell = (Len(CStr(cellValue)) > 0)
+    End If
+End Function
+
+Private Function GetLastUsedRowInColumn(ByVal ws As Worksheet, ByVal columnIndex As Long) As Long
+    Dim lastRow As Long
+
+    lastRow = ws.Cells(ws.Rows.Count, columnIndex).End(xlUp).Row
+    If lastRow < 1 Then
+        lastRow = 1
+    End If
+
+    GetLastUsedRowInColumn = lastRow
+End Function
+
+Private Function ReadColumnValuesFromRow( _
+    ByVal ws As Worksheet, _
+    ByVal columnIndex As Long, _
+    ByVal startRow As Long, _
+    ByVal endRow As Long) As Variant
+
+    Dim rawValues As Variant
+    Dim singleCell(1 To 1, 1 To 1) As Variant
+
+    If endRow < startRow Then
+        endRow = startRow
+    End If
+
+    rawValues = ws.Range(ws.Cells(startRow, columnIndex), ws.Cells(endRow, columnIndex)).Value
+
+    If startRow = endRow Then
+        singleCell(1, 1) = rawValues
+        ReadColumnValuesFromRow = singleCell
+    Else
+        ReadColumnValuesFromRow = rawValues
     End If
 End Function
 
@@ -1049,7 +1166,7 @@ Private Sub ValidateWorksheetName(ByVal sheetNameText As String)
 End Sub
 
 ' ============================================================
-' ƒXƒƒbƒg‘‚«‚İiB/C -> ƒGƒrƒfƒ“ƒXƒV[ƒgj
+' ƒXƒƒbƒg‘‚«‚İiE/H -> ƒGƒrƒfƒ“ƒXƒV[ƒgj
 ' ============================================================
 
 Private Sub FlushPendingBIfNeeded( _
@@ -1108,11 +1225,18 @@ Private Sub WriteBOnlySlot( _
 End Sub
 
 Private Function GetDestRowForSlot(ByVal slotIndex As Long) As Long
+    Dim slotHeightForWrite As Long
+
     If slotIndex < 0 Then
         Err.Raise vbObjectError + 2401, "GetDestRowForSlot", "slotIndex ‚ª•‰”‚Å‚·B"
     End If
 
-    GetDestRowForSlot = FIRST_DEST_ROW + (slotIndex * SLOT_HEIGHT)
+    slotHeightForWrite = mSlotHeight
+    If slotHeightForWrite <= 0 Then
+        slotHeightForWrite = SLOT_HEIGHT
+    End If
+
+    GetDestRowForSlot = FIRST_DEST_ROW + (slotIndex * slotHeightForWrite)
 End Function
 
 ' ============================================================

@@ -33,6 +33,8 @@ Public Sub RunMain()
     Dim syntaxEvents As Collection
     Dim markedCount As Long
     Dim resultMessage As String
+    Dim sourceTextValues As Variant
+    Dim sourceLastRow As Long
 
     ' 1) 機能名を入力
     featureName = PromptFeatureName()
@@ -65,12 +67,15 @@ Public Sub RunMain()
 
     Set individualSheet = FindIndividualSheet(targetWorkbook, featureName)
 
+    sourceLastRow = GetLastRow(currentSourceSheet, SOURCE_TEXT_COL)
+    sourceTextValues = ReadColumnValues(currentSourceSheet, SOURCE_TEXT_COL, 1, sourceLastRow)
+
     ' 5) 現行ソースシートに対してマーキング
-    MarkCurrentSourceSheet currentSourceSheet, markedCount
+    MarkCurrentSourceSheet currentSourceSheet, sourceTextValues, sourceLastRow, markedCount
 
     ' 6) 個別シートがある場合は解析結果を書き込む
     If Not individualSheet Is Nothing Then
-        Set syntaxEvents = CollectSyntaxEvents(currentSourceSheet)
+        Set syntaxEvents = CollectSyntaxEvents(sourceTextValues, sourceLastRow)
         WriteIndividualSheet individualSheet, syntaxEvents
         resultMessage = "個別シート出力: 実施（" & individualSheet.Name & "）"
     Else
@@ -324,21 +329,24 @@ Private Function FindIndividualSheet(ByVal targetWorkbook As Workbook, ByVal fea
     Next ws
 End Function
 
-Private Sub MarkCurrentSourceSheet(ByVal sourceSheet As Worksheet, ByRef markedCount As Long)
+Private Sub MarkCurrentSourceSheet( _
+    ByVal sourceSheet As Worksheet, _
+    ByRef sourceTextValues As Variant, _
+    ByVal lastRow As Long, _
+    ByRef markedCount As Long)
+
     ' 現行ソースシートのC列を走査し、対象構文に応じてB列へセクション番号を設定する
     ' - function 行      : B(次セクション番号)   例: B2
     ' - その他の対象構文 : B(現セクション番号)- 例: B1-
-    Dim lastRow As Long
     Dim rowIndex As Long
     Dim lineText As String
     Dim currentSectionIndex As Long
 
     markedCount = 0
-    lastRow = GetLastRow(sourceSheet, SOURCE_TEXT_COL)
     currentSectionIndex = 1
 
     For rowIndex = 1 To lastRow
-        lineText = GetCellText(sourceSheet.Cells(rowIndex, SOURCE_TEXT_COL))
+        lineText = GetCellTextFromValue(sourceTextValues(rowIndex, 1))
 
         ' コメント行（# / // 先頭）は書き込み対象外
         If IsCommentLine(lineText) Then
@@ -363,22 +371,23 @@ ContinueMarkLoop:
     Next rowIndex
 End Sub
 
-Private Function CollectSyntaxEvents(ByVal sourceSheet As Worksheet) As Collection
+Private Function CollectSyntaxEvents( _
+    ByRef sourceTextValues As Variant, _
+    ByVal lastRow As Long) As Collection
+
     ' 個別シート出力用に、現行ソースシートの構文イベントを上から順に収集する
     ' 文字列ベース判定（部分一致）
     Dim events As Collection
-    Dim lastRow As Long
     Dim rowIndex As Long
     Dim lineText As String
     Dim eventItem As Collection
     Dim switchEndRow As Long
 
     Set events = New Collection
-    lastRow = GetLastRow(sourceSheet, SOURCE_TEXT_COL)
     rowIndex = 1
 
     Do While rowIndex <= lastRow
-        lineText = GetCellText(sourceSheet.Cells(rowIndex, SOURCE_TEXT_COL))
+        lineText = GetCellTextFromValue(sourceTextValues(rowIndex, 1))
 
         ' コメント行（# / // 先頭）は個別シート出力の解析対象外
         If IsCommentLine(lineText) Then
@@ -403,7 +412,7 @@ Private Function CollectSyntaxEvents(ByVal sourceSheet As Worksheet) As Collecti
 
         ' switch は後続行の case/default を収集するので、まとめてイベント化する
         ElseIf IsSwitchLine(lineText) Then
-            Set eventItem = CollectSwitchEvent(sourceSheet, rowIndex, lastRow, switchEndRow)
+            Set eventItem = CollectSwitchEvent(sourceTextValues, rowIndex, lastRow, switchEndRow)
             events.Add eventItem
             If switchEndRow > rowIndex Then
                 rowIndex = switchEndRow
@@ -822,7 +831,12 @@ Private Function CreateFunctionEvent(ByVal functionName As String) As Collection
     Set CreateFunctionEvent = ev
 End Function
 
-Private Function CollectSwitchEvent(ByVal sourceSheet As Worksheet, ByVal switchRow As Long, ByVal lastRow As Long, ByRef endRow As Long) As Collection
+Private Function CollectSwitchEvent( _
+    ByRef sourceTextValues As Variant, _
+    ByVal switchRow As Long, _
+    ByVal lastRow As Long, _
+    ByRef endRow As Long) As Collection
+
     ' switch行を起点に、後続のcase/defaultを簡易的に収集して1イベントにまとめる
     ' 終端判定は厳密にせず、以下のような簡易条件で打ち切る:
     ' - 次のfunctionが来た
@@ -841,10 +855,10 @@ Private Function CollectSwitchEvent(ByVal sourceSheet As Worksheet, ByVal switch
 
     Set ev = NewEvent("SWITCH")
     Set caseValues = New Collection
-    switchArg = ParseSwitchArgument(GetCellText(sourceSheet.Cells(switchRow, SOURCE_TEXT_COL)))
+    switchArg = ParseSwitchArgument(GetCellTextFromValue(sourceTextValues(switchRow, 1)))
 
     For r = switchRow + 1 To lastRow
-        lineText = GetCellText(sourceSheet.Cells(r, SOURCE_TEXT_COL))
+        lineText = GetCellTextFromValue(sourceTextValues(r, 1))
         trimmedText = Trim$(lineText)
 
         ' コメント行（# / // 先頭）はswitch収集対象外
@@ -1019,21 +1033,44 @@ Private Function GetLastRow(ByVal ws As Worksheet, ByVal columnIndex As Long) As
     GetLastRow = lastRow
 End Function
 
-Private Function GetCellText(ByVal targetCell As Range) As String
-    ' エラー値セルを安全に文字列化するためのヘルパー
+Private Function ReadColumnValues( _
+    ByVal ws As Worksheet, _
+    ByVal columnIndex As Long, _
+    ByVal startRow As Long, _
+    ByVal endRow As Long) As Variant
+
+    Dim rawValues As Variant
+    Dim singleCell(1 To 1, 1 To 1) As Variant
+
+    If endRow < startRow Then
+        endRow = startRow
+    End If
+
+    rawValues = ws.Range(ws.Cells(startRow, columnIndex), ws.Cells(endRow, columnIndex)).Value
+
+    If startRow = endRow Then
+        singleCell(1, 1) = rawValues
+        ReadColumnValues = singleCell
+    Else
+        ReadColumnValues = rawValues
+    End If
+End Function
+
+Private Function GetCellTextFromValue(ByVal cellValue As Variant) As String
+    ' エラー値を安全に文字列化するためのヘルパー
     On Error GoTo SafeExit
 
-    If IsError(targetCell.Value) Then
-        GetCellText = vbNullString
-    ElseIf IsEmpty(targetCell.Value) Then
-        GetCellText = vbNullString
+    If IsError(cellValue) Then
+        GetCellTextFromValue = vbNullString
+    ElseIf IsEmpty(cellValue) Then
+        GetCellTextFromValue = vbNullString
     Else
-        GetCellText = CStr(targetCell.Value)
+        GetCellTextFromValue = CStr(cellValue)
     End If
     Exit Function
 
 SafeExit:
-    GetCellText = vbNullString
+    GetCellTextFromValue = vbNullString
 End Function
 
 Private Function IsCommentLine(ByVal lineText As String) As Boolean
