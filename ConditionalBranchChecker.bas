@@ -19,6 +19,7 @@ Private Const SYMBOL_EMPTY As String = "□"
 Private Const SHEET_KEY_CURRENT_SOURCE As String = "現行ソース"
 Private Const SHEET_KEY_INDIVIDUAL_PREFIX As String = "【個別】"
 Private Const TEMPLATE_SNAPSHOT_SHEET_PREFIX As String = "__TMPROW15_"
+Private Const LEADING_FUNCTION_STARTS_FROM_B1 As Boolean = True  ' True: 最初の判定対象がfunctionならB1開始にする
 
 Private mTemplateSnapshotSheet As Worksheet
 
@@ -35,6 +36,7 @@ Public Sub RunMain()
     Dim resultMessage As String
     Dim sourceTextValues As Variant
     Dim sourceLastRow As Long
+    Dim useLeadingFunctionB1 As Boolean
 
     ' 1) 機能名を入力
     featureName = PromptFeatureName()
@@ -69,14 +71,15 @@ Public Sub RunMain()
 
     sourceLastRow = GetLastRow(currentSourceSheet, SOURCE_TEXT_COL)
     sourceTextValues = ReadColumnValues(currentSourceSheet, SOURCE_TEXT_COL, 1, sourceLastRow)
+    useLeadingFunctionB1 = ShouldStartFunctionSectionFromB1(sourceTextValues, sourceLastRow)
 
     ' 5) 現行ソースシートに対してマーキング
-    MarkCurrentSourceSheet currentSourceSheet, sourceTextValues, sourceLastRow, markedCount
+    MarkCurrentSourceSheet currentSourceSheet, sourceTextValues, sourceLastRow, markedCount, useLeadingFunctionB1
 
     ' 6) 個別シートがある場合は解析結果を書き込む
     If Not individualSheet Is Nothing Then
         Set syntaxEvents = CollectSyntaxEvents(sourceTextValues, sourceLastRow)
-        WriteIndividualSheet individualSheet, syntaxEvents
+        WriteIndividualSheet individualSheet, syntaxEvents, useLeadingFunctionB1
         resultMessage = "個別シート出力: 実施（" & individualSheet.Name & "）"
     Else
         resultMessage = "個別シート出力: スキップ（対象シートなし）"
@@ -333,17 +336,22 @@ Private Sub MarkCurrentSourceSheet( _
     ByVal sourceSheet As Worksheet, _
     ByRef sourceTextValues As Variant, _
     ByVal lastRow As Long, _
-    ByRef markedCount As Long)
+    ByRef markedCount As Long, _
+    ByVal leadingFunctionStartsAtB1 As Boolean)
 
     ' 現行ソースシートのC列を走査し、対象構文に応じてB列へセクション番号を設定する
-    ' - function 行      : B(次セクション番号)   例: B2
+    ' - function 行      : B(次セクション番号)   例: B2（先頭function開始時は設定でB1）
     ' - その他の対象構文 : B(現セクション番号)- 例: B1-
     Dim rowIndex As Long
     Dim lineText As String
     Dim currentSectionIndex As Long
 
     markedCount = 0
-    currentSectionIndex = 1
+    If leadingFunctionStartsAtB1 Then
+        currentSectionIndex = 0
+    Else
+        currentSectionIndex = 1
+    End If
 
     For rowIndex = 1 To lastRow
         lineText = GetCellTextFromValue(sourceTextValues(rowIndex, 1))
@@ -370,6 +378,36 @@ Private Sub MarkCurrentSourceSheet( _
 ContinueMarkLoop:
     Next rowIndex
 End Sub
+
+Private Function ShouldStartFunctionSectionFromB1( _
+    ByRef sourceTextValues As Variant, _
+    ByVal lastRow As Long) As Boolean
+
+    ' 最初の判定対象構文がfunctionなら、先頭セクションをB1から開始する
+    Dim rowIndex As Long
+    Dim lineText As String
+
+    If Not LEADING_FUNCTION_STARTS_FROM_B1 Then Exit Function
+
+    For rowIndex = 1 To lastRow
+        lineText = GetCellTextFromValue(sourceTextValues(rowIndex, 1))
+
+        If IsCommentLine(lineText) Then GoTo ContinueLeadingCheck
+        If IsSourceSearchStopLine(lineText) Then Exit For
+        If Len(Trim$(lineText)) = 0 Then GoTo ContinueLeadingCheck
+
+        If IsFunctionLine(lineText) Then
+            ShouldStartFunctionSectionFromB1 = True
+            Exit Function
+        End If
+
+        If IsMarkTargetLine(lineText) Then
+            Exit Function
+        End If
+
+ContinueLeadingCheck:
+    Next rowIndex
+End Function
 
 Private Function CollectSyntaxEvents( _
     ByRef sourceTextValues As Variant, _
@@ -454,7 +492,7 @@ ContinueLoop:
     Set CollectSyntaxEvents = events
 End Function
 
-Private Sub WriteIndividualSheet(ByVal individualSheet As Worksheet, ByVal syntaxEvents As Collection)
+Private Sub WriteIndividualSheet(ByVal individualSheet As Worksheet, ByVal syntaxEvents As Collection, ByVal leadingFunctionStartsAtB1 As Boolean)
     ' 個別シートへ、仕様の書式で処理セクション/確認ブロックを書き込む
     On Error GoTo ErrorHandler
 
@@ -472,9 +510,14 @@ Private Sub WriteIndividualSheet(ByVal individualSheet As Worksheet, ByVal synta
     PrepareIndividualSheetTemplateSnapshot individualSheet
 
     ' 初期値（固定）
-    sectionIndex = 1
-    WriteSectionHeader individualSheet, SECTION_HEADER_START_ROW, sectionIndex, "MAIN"
-    nextBlockStartRow = SECTION_HEADER_START_ROW + 1
+    If leadingFunctionStartsAtB1 And IsFirstSyntaxEventFunction(syntaxEvents) Then
+        sectionIndex = 0
+        nextBlockStartRow = SECTION_HEADER_START_ROW
+    Else
+        sectionIndex = 1
+        WriteSectionHeader individualSheet, SECTION_HEADER_START_ROW, sectionIndex, "MAIN"
+        nextBlockStartRow = SECTION_HEADER_START_ROW + 1
+    End If
 
     For i = 1 To syntaxEvents.Count
         Set eventItem = syntaxEvents.item(i)
@@ -489,9 +532,11 @@ Private Sub WriteIndividualSheet(ByVal individualSheet As Worksheet, ByVal synta
                 nextBlockStartRow = nextBlockStartRow + 1
 
             Case "SWITCH"
+                EnsureSectionHeaderStarted individualSheet, sectionIndex, nextBlockStartRow
                 nextBlockStartRow = WriteSwitchBlock(individualSheet, nextBlockStartRow, eventItem)
 
             Case "IF", "TERNARY", "FOR", "FOREACH", "WHILE"
+                EnsureSectionHeaderStarted individualSheet, sectionIndex, nextBlockStartRow
                 WriteNormalBlock individualSheet, nextBlockStartRow, eventItem
                 nextBlockStartRow = nextBlockStartRow + BLOCK_STEP_NORMAL
         End Select
@@ -508,6 +553,28 @@ ErrorHandler:
     ClearIndividualSheetTemplateSnapshot
 
     Err.Raise errorNumber, errorSource, errorDescription
+End Sub
+
+Private Function IsFirstSyntaxEventFunction(ByVal syntaxEvents As Collection) As Boolean
+    Dim firstEvent As Collection
+
+    If syntaxEvents Is Nothing Then Exit Function
+    If syntaxEvents.Count = 0 Then Exit Function
+
+    Set firstEvent = syntaxEvents.item(1)
+    IsFirstSyntaxEventFunction = (UCase$(EventText(firstEvent, "Kind")) = "FUNCTION")
+End Function
+
+Private Sub EnsureSectionHeaderStarted( _
+    ByVal ws As Worksheet, _
+    ByRef sectionIndex As Long, _
+    ByRef nextBlockStartRow As Long)
+
+    If sectionIndex > 0 Then Exit Sub
+
+    sectionIndex = 1
+    WriteSectionHeader ws, nextBlockStartRow, sectionIndex, "MAIN"
+    nextBlockStartRow = nextBlockStartRow + 1
 End Sub
 
 Private Sub WriteSectionHeader(ByVal ws As Worksheet, ByVal headerRow As Long, ByVal sectionIndex As Long, ByVal sectionName As String)

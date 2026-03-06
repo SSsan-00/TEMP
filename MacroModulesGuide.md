@@ -78,3 +78,8 @@
 - C列に記載する文言は固定です: `SQLインジェクション対策済み`
 - 文言を変更したい場合は `EscapePartsMarking.bas` の `DEFAULT_COMPLETION_MESSAGE` を編集してください
 - 処理対象シートは、シート名に `A1-1-1` を含むシートのみです
+## 更新メモ（ConditionalBranchChecker.bas）
+- 先頭の判定対象構文が `function` の場合、セクション番号を `B1` から開始できるようにしました。
+- 切替は `ConditionalBranchChecker.bas` の `LEADING_FUNCTION_STARTS_FROM_B1` で行います。
+- `True` のとき: 先頭functionを `B1` で開始（現行ソースB列マーキング / 個別シート見出しの両方に適用）
+- `False` のとき: 従来どおり先頭functionは `B2` 開始
