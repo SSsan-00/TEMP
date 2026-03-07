@@ -22,6 +22,7 @@ Private Const TEMPLATE_SNAPSHOT_SHEET_PREFIX As String = "__TMPROW15_"
 Private Const LEADING_FUNCTION_STARTS_FROM_B1 As Boolean = True  ' True: 最初の判定対象がfunctionならB1開始にする
 
 Private mTemplateSnapshotSheet As Worksheet
+Private mPreAllocatedWritableLastRow As Long
 
 Public Sub RunMain()
     On Error GoTo ErrorHandler
@@ -502,6 +503,8 @@ Private Sub WriteIndividualSheet(ByVal individualSheet As Worksheet, ByVal synta
     Dim eventItem As Collection
     Dim eventKind As String
     Dim functionName As String
+    Dim startFromFunctionAtB1 As Boolean
+    Dim plannedLastWriteRow As Long
     Dim errorNumber As Long
     Dim errorDescription As String
     Dim errorSource As String
@@ -509,8 +512,13 @@ Private Sub WriteIndividualSheet(ByVal individualSheet As Worksheet, ByVal synta
     ' 追記処理の開始前に、個別シート15行目をテンプレートとして退避しておく
     PrepareIndividualSheetTemplateSnapshot individualSheet
 
+    startFromFunctionAtB1 = (leadingFunctionStartsAtB1 And IsFirstSyntaxEventFunction(syntaxEvents))
+    plannedLastWriteRow = EstimateLastWriteRow(syntaxEvents, startFromFunctionAtB1)
+    EnsureIndividualSheetWritableCapacity individualSheet, plannedLastWriteRow
+    mPreAllocatedWritableLastRow = plannedLastWriteRow
+
     ' 初期値（固定）
-    If leadingFunctionStartsAtB1 And IsFirstSyntaxEventFunction(syntaxEvents) Then
+    If startFromFunctionAtB1 Then
         sectionIndex = 0
         nextBlockStartRow = SECTION_HEADER_START_ROW
     Else
@@ -543,6 +551,7 @@ Private Sub WriteIndividualSheet(ByVal individualSheet As Worksheet, ByVal synta
     Next i
 
     ClearIndividualSheetTemplateSnapshot
+    mPreAllocatedWritableLastRow = 0
     Exit Sub
 
 ErrorHandler:
@@ -551,6 +560,7 @@ ErrorHandler:
     errorSource = Err.Source
 
     ClearIndividualSheetTemplateSnapshot
+    mPreAllocatedWritableLastRow = 0
 
     Err.Raise errorNumber, errorSource, errorDescription
 End Sub
@@ -575,6 +585,117 @@ Private Sub EnsureSectionHeaderStarted( _
     sectionIndex = 1
     WriteSectionHeader ws, nextBlockStartRow, sectionIndex, "MAIN"
     nextBlockStartRow = nextBlockStartRow + 1
+End Sub
+
+Private Function EstimateLastWriteRow( _
+    ByVal syntaxEvents As Collection, _
+    ByVal startFromFunctionAtB1 As Boolean) As Long
+
+    Dim sectionIndex As Long
+    Dim nextBlockStartRow As Long
+    Dim i As Long
+    Dim eventItem As Collection
+    Dim eventKind As String
+    Dim maxRow As Long
+    Dim switchLastRow As Long
+
+    If startFromFunctionAtB1 Then
+        sectionIndex = 0
+        nextBlockStartRow = SECTION_HEADER_START_ROW
+    Else
+        sectionIndex = 1
+        nextBlockStartRow = SECTION_HEADER_START_ROW + 1
+        maxRow = SECTION_HEADER_START_ROW
+    End If
+
+    For i = 1 To syntaxEvents.Count
+        Set eventItem = syntaxEvents.item(i)
+        eventKind = UCase$(EventText(eventItem, "Kind"))
+
+        Select Case eventKind
+            Case "FUNCTION"
+                sectionIndex = sectionIndex + 1
+                If nextBlockStartRow > maxRow Then
+                    maxRow = nextBlockStartRow
+                End If
+                nextBlockStartRow = nextBlockStartRow + 1
+
+            Case "SWITCH"
+                If sectionIndex = 0 Then
+                    sectionIndex = 1
+                    If nextBlockStartRow > maxRow Then
+                        maxRow = nextBlockStartRow
+                    End If
+                    nextBlockStartRow = nextBlockStartRow + 1
+                End If
+
+                switchLastRow = EstimateSwitchBlockLastRow(eventItem, nextBlockStartRow)
+                If switchLastRow > maxRow Then
+                    maxRow = switchLastRow
+                End If
+                nextBlockStartRow = switchLastRow + 2
+
+            Case "IF", "TERNARY", "FOR", "FOREACH", "WHILE"
+                If sectionIndex = 0 Then
+                    sectionIndex = 1
+                    If nextBlockStartRow > maxRow Then
+                        maxRow = nextBlockStartRow
+                    End If
+                    nextBlockStartRow = nextBlockStartRow + 1
+                End If
+
+                If (nextBlockStartRow + 3) > maxRow Then
+                    maxRow = nextBlockStartRow + 3
+                End If
+                nextBlockStartRow = nextBlockStartRow + BLOCK_STEP_NORMAL
+        End Select
+    Next i
+
+    EstimateLastWriteRow = maxRow
+End Function
+
+Private Function EstimateSwitchBlockLastRow(ByVal eventItem As Collection, ByVal startRow As Long) As Long
+    Dim caseValues As Collection
+    Dim caseCount As Long
+
+    Set caseValues = EventCollection(eventItem, "CaseValues")
+    If Not caseValues Is Nothing Then
+        caseCount = caseValues.Count
+    End If
+
+    ' switch本体のヘッダ(startRow) + 分岐行(startRow+1, +2刻み)
+    EstimateSwitchBlockLastRow = startRow + 1 + (caseCount * 2)
+End Function
+
+Private Sub EnsureIndividualSheetWritableCapacity(ByVal ws As Worksheet, ByVal requiredLastRow As Long)
+    ' 書き込み予定の最終行が分かっている場合、必要な行挿入を先にまとめて実施する
+    Dim alphaRow As Long
+    Dim triggerStartRow As Long
+    Dim insertAtRow As Long
+
+    If requiredLastRow < SECTION_HEADER_START_ROW Then Exit Sub
+
+    Do
+        alphaRow = FindAlphaRow(ws, requiredLastRow)
+        If alphaRow = 0 Then Exit Sub
+
+        triggerStartRow = alphaRow - INDIVIDUAL_TEMPLATE_PREINSERT_MARGIN
+        If triggerStartRow < 1 Then
+            triggerStartRow = 1
+        End If
+
+        If requiredLastRow < triggerStartRow Then
+            Exit Do
+        End If
+
+        insertAtRow = alphaRow - 10
+        If insertAtRow < 1 Then
+            insertAtRow = 1
+        End If
+
+        InsertTemplateRowsChunk ws, insertAtRow, INDIVIDUAL_TEMPLATE_INSERT_COUNT
+        Application.CutCopyMode = False
+    Loop
 End Sub
 
 Private Sub WriteSectionHeader(ByVal ws As Worksheet, ByVal headerRow As Long, ByVal sectionIndex As Long, ByVal sectionName As String)
@@ -677,11 +798,16 @@ End Sub
 Private Sub EnsureIndividualSheetWritableRow(ByVal ws As Worksheet, ByVal rowIndex As Long)
     ' A:Dが未結合の最初の行をα行とし、
     ' 書き込み予定行が α-50 ～ α に入る場合は事前退避テンプレートを50行挿入する
+    ' 事前確保済み行以内は判定を省略して高速化する
     Dim alphaRow As Long
     Dim triggerStartRow As Long
     Dim insertAtRow As Long
 
     If rowIndex < SECTION_HEADER_START_ROW Then Exit Sub
+
+    If mPreAllocatedWritableLastRow > 0 Then
+        If rowIndex <= mPreAllocatedWritableLastRow Then Exit Sub
+    End If
 
     alphaRow = FindAlphaRow(ws, rowIndex)
     If alphaRow = 0 Then Exit Sub

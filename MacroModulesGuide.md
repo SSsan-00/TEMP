@@ -83,3 +83,4 @@
 - 切替は `ConditionalBranchChecker.bas` の `LEADING_FUNCTION_STARTS_FROM_B1` で行います。
 - `True` のとき: 先頭functionを `B1` で開始（現行ソースB列マーキング / 個別シート見出しの両方に適用）
 - `False` のとき: 従来どおり先頭functionは `B2` 開始
+- 個別シート書き込み前に必要行数を見積もり、行挿入を事前にまとめて実施（大量イベント時の挿入回数を削減）
