@@ -1,0 +1,974 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mini Inventory Manager</title>
+
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #60a5fa;
+      --danger: #f87171;
+      --ok: #34d399;
+      --border: rgba(255,255,255,0.12);
+      --shadow: 0 10px 25px rgba(0,0,0,0.35);
+      --radius: 14px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: linear-gradient(160deg, #0b1023, #0f172a 60%, #0b1023);
+      color: var(--text);
+      font-family: var(--sans);
+      line-height: 1.45;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      backdrop-filter: blur(10px);
+      background: rgba(15, 23, 42, 0.65);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 18px 18px 40px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+
+    @media (min-width: 900px) {
+      .row {
+        grid-template-columns: 420px 1fr;
+        align-items: start;
+      }
+    }
+
+    .title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: radial-gradient(circle at 30% 30%, #60a5fa, #2563eb 55%, #1e3a8a);
+      box-shadow: var(--shadow);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: 0.2px;
+    }
+
+    .subtitle {
+      margin: 2px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .panel {
+      background: rgba(17, 24, 39, 0.75);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panelHeader {
+      padding: 14px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .panelHeader .hint {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .panelBody {
+      padding: 14px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.65);
+      color: var(--text);
+      outline: none;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: rgba(96, 165, 250, 0.55);
+      box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.15);
+    }
+
+    .grid2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .grid3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    button {
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.7);
+      color: var(--text);
+      padding: 9px 12px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: transform 0.05s ease, background 0.15s ease, border-color 0.15s ease;
+    }
+
+    button:hover {
+      border-color: rgba(96, 165, 250, 0.55);
+      background: rgba(15, 23, 42, 0.9);
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    .primary {
+      border-color: rgba(96, 165, 250, 0.55);
+      background: rgba(37, 99, 235, 0.22);
+    }
+
+    .danger {
+      border-color: rgba(248, 113, 113, 0.55);
+      background: rgba(248, 113, 113, 0.12);
+    }
+
+    .ghost {
+      border-color: transparent;
+      background: transparent;
+    }
+
+    .note {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 10px;
+    }
+
+    .error {
+      color: var(--danger);
+      font-size: 12px;
+      margin-top: 6px;
+      min-height: 16px;
+    }
+
+    .success {
+      color: var(--ok);
+      font-size: 12px;
+      margin-top: 6px;
+      min-height: 16px;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .pill {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      background: rgba(15, 23, 42, 0.55);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 12px;
+    }
+
+    thead th {
+      text-align: left;
+      font-size: 12px;
+      color: var(--muted);
+      padding: 10px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.5);
+      position: sticky;
+      top: 64px; /* headerの高さに合わせて "なんとなく" */
+      z-index: 5;
+    }
+
+    tbody td {
+      padding: 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    tbody tr:hover {
+      background: rgba(96, 165, 250, 0.08);
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+      background: rgba(15, 23, 42, 0.55);
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+
+    .dot.ok { background: var(--ok); }
+    .dot.low { background: #fbbf24; }   /* yellow-ish */
+    .dot.out { background: var(--danger); }
+
+    .small {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .kpi {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+
+    .kpi .card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+      background: rgba(15, 23, 42, 0.5);
+    }
+
+    .kpi .label {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .kpi .value {
+      font-size: 18px;
+      margin-top: 2px;
+      font-family: var(--mono);
+    }
+
+    /* --- modal --- */
+    .modalBack {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      z-index: 999;
+    }
+
+    .modal {
+      width: min(680px, 100%);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: rgba(17, 24, 39, 0.95);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .modalHeader {
+      padding: 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .modalTitle {
+      margin: 0;
+      font-size: 14px;
+    }
+
+    .modalBody {
+      padding: 14px;
+    }
+
+    .code {
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.65);
+      white-space: pre;
+      overflow: auto;
+      max-height: 320px;
+    }
+
+    .footerHint {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="wrap">
+      <div class="title">
+        <div class="logo" aria-hidden="true"></div>
+        <div>
+          <h1>Mini Inventory Manager</h1>
+          <div class="subtitle">ローカルで動く / 保存は LocalStorage / JSだけで完結</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="row">
+      <!-- Left: Form -->
+      <section class="panel" aria-label="入力フォーム">
+        <div class="panelHeader">
+          <div>
+            <div style="font-weight:600;">Item追加</div>
+            <div class="hint">必須: 名前 / 数量 / カテゴリ</div>
+          </div>
+          <button class="ghost" id="btnOpenHelp" type="button">Help</button>
+        </div>
+
+        <div class="panelBody">
+          <form id="form">
+            <div style="margin-bottom:12px;">
+              <label for="name">名前 *</label>
+              <input id="name" name="name" autocomplete="off" placeholder="例: USB-C Cable" />
+              <div class="error" id="errName"></div>
+            </div>
+
+            <div class="grid2" style="margin-bottom:12px;">
+              <div>
+                <label for="qty">数量 *</label>
+                <input id="qty" name="qty" inputmode="numeric" placeholder="例: 3" />
+                <div class="error" id="errQty"></div>
+              </div>
+              <div>
+                <label for="category">カテゴリ *</label>
+                <select id="category" name="category">
+                  <option value="">選択してください</option>
+                  <option value="cable">Cable</option>
+                  <option value="adapter">Adapter</option>
+                  <option value="tool">Tool</option>
+                  <option value="other">Other</option>
+                </select>
+                <div class="error" id="errCategory"></div>
+              </div>
+            </div>
+
+            <div class="grid3" style="margin-bottom:12px;">
+              <div>
+                <label for="price">価格</label>
+                <input id="price" name="price" inputmode="decimal" placeholder="例: 1200" />
+              </div>
+              <div>
+                <label for="min">最小在庫</label>
+                <input id="min" name="min" inputmode="numeric" placeholder="例: 2" />
+              </div>
+              <div>
+                <label for="status">ステータス</label>
+                <select id="status" name="status">
+                  <option value="active">active</option>
+                  <option value="hold">hold</option>
+                  <option value="archived">archived</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="margin-bottom:12px;">
+              <label for="memo">メモ</label>
+              <textarea id="memo" name="memo" rows="3" placeholder="任意: 例) 発注先や注意点"></textarea>
+            </div>
+
+            <div class="actions">
+              <button class="primary" id="btnAdd" type="submit">追加</button>
+              <button id="btnReset" type="button">入力クリア</button>
+              <button class="danger" id="btnClearAll" type="button">全削除</button>
+            </div>
+
+            <div class="success" id="okMsg"></div>
+            <div class="note">
+              ※保存先はブラウザの LocalStorage。別PC/別ブラウザには同期されない。
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- Right: Table -->
+      <section class="panel" aria-label="一覧">
+        <div class="panelHeader">
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <div style="font-weight:600;">一覧</div>
+            <div class="hint">検索/フィルタ/ソート/エクスポート</div>
+          </div>
+
+          <div class="toolbar">
+            <input id="search" placeholder="検索: 名前/カテゴリ/メモ" style="width:220px;" />
+            <select id="filterStatus" style="width:140px;">
+              <option value="">status: all</option>
+              <option value="active">active</option>
+              <option value="hold">hold</option>
+              <option value="archived">archived</option>
+            </select>
+            <button id="btnExport" type="button">Export</button>
+          </div>
+        </div>
+
+        <div class="panelBody">
+          <div class="kpi" style="margin-bottom:12px;">
+            <div class="card">
+              <div class="label">items</div>
+              <div class="value" id="kpiItems">0</div>
+            </div>
+            <div class="card">
+              <div class="label">low stock</div>
+              <div class="value" id="kpiLow">0</div>
+            </div>
+            <div class="card">
+              <div class="label">total qty</div>
+              <div class="value" id="kpiQty">0</div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+            <span class="pill" id="pillSort">sort: created desc</span>
+            <button id="btnSort" type="button">Sort切替</button>
+            <button id="btnSeed" type="button">サンプル投入</button>
+          </div>
+
+          <div style="overflow:auto;max-height:520px;border-radius:12px;border:1px solid var(--border);">
+            <table aria-label="items table">
+              <thead>
+                <tr>
+                  <th style="min-width:240px;">Name</th>
+                  <th style="min-width:120px;">Category</th>
+                  <th style="min-width:110px;">Qty</th>
+                  <th style="min-width:120px;">Status</th>
+                  <th style="min-width:110px;">Price</th>
+                  <th style="min-width:220px;">Memo</th>
+                  <th style="min-width:140px;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="tbody">
+                <!-- JSが描画 -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="footerHint">
+            ヒント: Qtyが「最小在庫」より小さいと low 表示。0なら out 表示。
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Modal -->
+  <div class="modalBack" id="modalBack" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modalHeader">
+        <h2 class="modalTitle" id="modalTitle">Help / Export Preview</h2>
+        <button class="ghost" id="btnCloseModal" type="button">Close</button>
+      </div>
+      <div class="modalBody">
+        <div class="small">
+          ・追加したデータは LocalStorage に保存されます。<br />
+          ・Export は現在表示中（検索/フィルタ適用後）のデータを JSON で表示します。<br />
+          ・Delete は即削除、Archive はステータス変更のみです。
+        </div>
+        <div style="height:10px;"></div>
+        <div class="code" id="exportBox">{}</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // -----------------------------
+    // tiny utilities
+    // -----------------------------
+    const $ = (selector) => document.querySelector(selector);
+
+    const STORAGE_KEY = "mini_inventory_items_v1";
+
+    function nowIso() {
+      return new Date().toISOString();
+    }
+
+    function safeParseInt(value, fallback = 0) {
+      const n = parseInt(value, 10);
+      return Number.isFinite(n) ? n : fallback;
+    }
+
+    function safeParseFloat(value, fallback = 0) {
+      const n = parseFloat(value);
+      return Number.isFinite(n) ? n : fallback;
+    }
+
+    function escapeHtml(text) {
+      // 画面表示用: innerHTMLに混ぜる値は最低限エスケープ
+      return String(text)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll("\"", "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function toCategoryLabel(cat) {
+      switch (cat) {
+        case "cable": return "Cable";
+        case "adapter": return "Adapter";
+        case "tool": return "Tool";
+        case "other": return "Other";
+        default: return "(unknown)";
+      }
+    }
+
+    function stockLevelDot(qty, min) {
+      if (qty <= 0) return "out";
+      if (qty < min) return "low";
+      return "ok";
+    }
+
+    // -----------------------------
+    // state
+    // -----------------------------
+    const state = {
+      items: [],
+      sortMode: "created_desc", // created_desc | created_asc | name_asc | qty_desc
+      search: "",
+      filterStatus: "",
+    };
+
+    // -----------------------------
+    // load/save
+    // -----------------------------
+    function loadItems() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed;
+      } catch {
+        return [];
+      }
+    }
+
+    function saveItems(items) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    }
+
+    // -----------------------------
+    // validation
+    // -----------------------------
+    function validate(formData) {
+      const errors = {};
+
+      const name = (formData.name || "").trim();
+      const qty = safeParseInt(formData.qty, NaN);
+      const category = (formData.category || "").trim();
+
+      if (!name) {
+        errors.name = "名前は必須です";
+      } else if (name.length > 50) {
+        errors.name = "名前は50文字以内にしてね";
+      }
+
+      if (!Number.isFinite(qty)) {
+        errors.qty = "数量は数字で入力してね";
+      } else if (qty < 0 || qty > 9999) {
+        errors.qty = "数量は 0〜9999 の範囲にしてね";
+      }
+
+      if (!category) {
+        errors.category = "カテゴリは必須です";
+      }
+
+      return errors;
+    }
+
+    function setErrors(errors) {
+      $("#errName").textContent = errors.name || "";
+      $("#errQty").textContent = errors.qty || "";
+      $("#errCategory").textContent = errors.category || "";
+    }
+
+    function setOk(text) {
+      $("#okMsg").textContent = text || "";
+      if (text) {
+        setTimeout(() => { $("#okMsg").textContent = ""; }, 1300);
+      }
+    }
+
+    // -----------------------------
+    // filtering & sorting
+    // -----------------------------
+    function getVisibleItems() {
+      const q = state.search.trim().toLowerCase();
+      const st = state.filterStatus;
+
+      let list = state.items.slice();
+
+      if (st) {
+        list = list.filter(x => x.status === st);
+      }
+
+      if (q) {
+        list = list.filter(x => {
+          const blob = `${x.name} ${x.category} ${x.memo}`.toLowerCase();
+          return blob.includes(q);
+        });
+      }
+
+      // sort
+      switch (state.sortMode) {
+        case "created_asc":
+          list.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+          break;
+        case "name_asc":
+          list.sort((a, b) => a.name.localeCompare(b.name, "ja"));
+          break;
+        case "qty_desc":
+          list.sort((a, b) => b.qty - a.qty);
+          break;
+        case "created_desc":
+        default:
+          list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+          break;
+      }
+
+      return list;
+    }
+
+    function updateSortPill() {
+      $("#pillSort").textContent = `sort: ${state.sortMode}`;
+    }
+
+    // -----------------------------
+    // render
+    // -----------------------------
+    function render() {
+      const tbody = $("#tbody");
+      const visible = getVisibleItems();
+
+      // KPI
+      const lowCount = visible.filter(x => x.qty > 0 && x.qty < x.min).length;
+      const totalQty = visible.reduce((sum, x) => sum + x.qty, 0);
+      $("#kpiItems").textContent = String(visible.length);
+      $("#kpiLow").textContent = String(lowCount);
+      $("#kpiQty").textContent = String(totalQty);
+
+      // empty
+      if (visible.length === 0) {
+        tbody.innerHTML =
+          "<tr>" +
+          "  <td colspan=\"7\" class=\"small\">表示できるデータがありません（検索条件を変えてみて）</td>" +
+          "</tr>";
+        return;
+      }
+
+      // rows
+      const rowsHtml = visible.map(item => {
+        const dot = stockLevelDot(item.qty, item.min);
+        const catLabel = toCategoryLabel(item.category);
+
+        // 表示用に最低限 escape
+        const name = escapeHtml(item.name);
+        const memo = escapeHtml(item.memo || "");
+        const status = escapeHtml(item.status);
+        const price = item.price > 0 ? String(item.price) : "-";
+
+        return (
+          "<tr data-id=\"" + item.id + "\">" +
+          "  <td>" +
+          "    <div style=\"font-weight:600;\">" + name + "</div>" +
+          "    <div class=\"small\">created: " + escapeHtml(item.createdAt) + "</div>" +
+          "  </td>" +
+          "  <td><span class=\"tag\"><span class=\"dot\"></span>" + catLabel + "</span></td>" +
+          "  <td>" +
+          "    <span class=\"tag\"><span class=\"dot " + dot + "\"></span>" +
+          "    " + item.qty + " / min " + item.min +
+          "    </span>" +
+          "  </td>" +
+          "  <td><span class=\"tag\">" + status + "</span></td>" +
+          "  <td><span class=\"tag\">" + escapeHtml(price) + "</span></td>" +
+          "  <td class=\"small\">" + memo + "</td>" +
+          "  <td>" +
+          "    <div style=\"display:flex;gap:8px;flex-wrap:wrap;\">" +
+          "      <button type=\"button\" class=\"btnArchive\">Archive</button>" +
+          "      <button type=\"button\" class=\"btnDelete danger\">Delete</button>" +
+          "    </div>" +
+          "  </td>" +
+          "</tr>"
+        );
+      }).join("");
+
+      tbody.innerHTML = rowsHtml;
+    }
+
+    // -----------------------------
+    // actions: add / delete / archive
+    // -----------------------------
+    function addItem(formData) {
+      const errors = validate(formData);
+      setErrors(errors);
+      if (Object.keys(errors).length > 0) return;
+
+      const item = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        name: formData.name.trim(),
+        qty: safeParseInt(formData.qty, 0),
+        category: formData.category,
+        price: safeParseFloat(formData.price, 0),
+        min: Math.max(0, safeParseInt(formData.min, 0)),
+        status: formData.status || "active",
+        memo: (formData.memo || "").trim(),
+        createdAt: nowIso(),
+      };
+
+      state.items.unshift(item);
+      saveItems(state.items);
+      setOk("追加した！");
+      render();
+    }
+
+    function deleteItem(id) {
+      state.items = state.items.filter(x => x.id !== id);
+      saveItems(state.items);
+      render();
+    }
+
+    function archiveItem(id) {
+      const target = state.items.find(x => x.id === id);
+      if (!target) return;
+
+      // active -> archived, hold -> archived, archived -> active
+      if (target.status === "archived") target.status = "active";
+      else target.status = "archived";
+
+      saveItems(state.items);
+      render();
+    }
+
+    // -----------------------------
+    // modal
+    // -----------------------------
+    function openModal(text) {
+      $("#exportBox").textContent = text || "{}";
+      $("#modalBack").style.display = "flex";
+      $("#modalBack").setAttribute("aria-hidden", "false");
+    }
+
+    function closeModal() {
+      $("#modalBack").style.display = "none";
+      $("#modalBack").setAttribute("aria-hidden", "true");
+    }
+
+    // -----------------------------
+    // seed data
+    // -----------------------------
+    function seed() {
+      const samples = [
+        { name: "USB-C Cable 1m", qty: 3, category: "cable", price: 780, min: 2, status: "active", memo: "黒 / 急速充電対応" },
+        { name: "HDMI Adapter", qty: 1, category: "adapter", price: 1900, min: 2, status: "hold", memo: "相性注意" },
+        { name: "Precision Driver Set", qty: 0, category: "tool", price: 2400, min: 1, status: "active", memo: "発注予定" },
+        { name: "Label Sticker", qty: 12, category: "other", price: 500, min: 5, status: "active", memo: "棚整理用" },
+      ];
+
+      const createdAt = nowIso();
+      const list = samples.map((s, i) => ({
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + i),
+        createdAt,
+        ...s,
+      }));
+
+      state.items = list.concat(state.items);
+      saveItems(state.items);
+      render();
+      setOk("サンプル投入OK");
+    }
+
+    // -----------------------------
+    // wiring (event handlers)
+    // -----------------------------
+    function readForm() {
+      return {
+        name: $("#name").value,
+        qty: $("#qty").value,
+        category: $("#category").value,
+        price: $("#price").value,
+        min: $("#min").value,
+        status: $("#status").value,
+        memo: $("#memo").value,
+      };
+    }
+
+    function resetForm() {
+      $("#name").value = "";
+      $("#qty").value = "";
+      $("#category").value = "";
+      $("#price").value = "";
+      $("#min").value = "";
+      $("#status").value = "active";
+      $("#memo").value = "";
+      setErrors({});
+      setOk("");
+    }
+
+    function clearAll() {
+      // いきなり消すのは危険なので confirm を入れる
+      const ok = confirm("全データを削除します。よろしいですか？");
+      if (!ok) return;
+
+      state.items = [];
+      saveItems(state.items);
+      render();
+      setOk("全削除しました");
+    }
+
+    function toggleSort() {
+      const modes = ["created_desc", "created_asc", "name_asc", "qty_desc"];
+      const idx = modes.indexOf(state.sortMode);
+      const next = modes[(idx + 1) % modes.length];
+      state.sortMode = next;
+      updateSortPill();
+      render();
+    }
+
+    function exportVisible() {
+      const visible = getVisibleItems();
+      const text = JSON.stringify(visible, null, 2);
+      openModal(text);
+    }
+
+    function init() {
+      // load from storage
+      state.items = loadItems();
+      updateSortPill();
+      render();
+
+      // form submit
+      $("#form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        addItem(readForm());
+      });
+
+      $("#btnReset").addEventListener("click", () => resetForm());
+      $("#btnClearAll").addEventListener("click", () => clearAll());
+
+      // search & filter
+      $("#search").addEventListener("input", (e) => {
+        state.search = e.target.value;
+        render();
+      });
+
+      $("#filterStatus").addEventListener("change", (e) => {
+        state.filterStatus = e.target.value;
+        render();
+      });
+
+      // table events (event delegation)
+      $("#tbody").addEventListener("click", (e) => {
+        const btn = e.target.closest("button");
+        if (!btn) return;
+
+        const tr = e.target.closest("tr");
+        if (!tr) return;
+
+        const id = tr.getAttribute("data-id");
+        if (!id) return;
+
+        if (btn.classList.contains("btnDelete")) {
+          deleteItem(id);
+          return;
+        }
+
+        if (btn.classList.contains("btnArchive")) {
+          archiveItem(id);
+          return;
+        }
+      });
+
+      // sort / export / seed
+      $("#btnSort").addEventListener("click", () => toggleSort());
+      $("#btnExport").addEventListener("click", () => exportVisible());
+      $("#btnSeed").addEventListener("click", () => seed());
+
+      // modal
+      $("#btnOpenHelp").addEventListener("click", () => openModal("{\n  \"help\": true\n}"));
+      $("#btnCloseModal").addEventListener("click", () => closeModal());
+      $("#modalBack").addEventListener("click", (e) => {
+        // 背景クリックで閉じる（モーダル本体クリックは無視）
+        if (e.target.id === "modalBack") closeModal();
+      });
+
+      // ESC で閉じる
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeModal();
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>
