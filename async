@@ -1,0 +1,71 @@
+// ------------------------------------------------------------
+// 通信中かどうか
+// ------------------------------------------------------------
+var isLoading = false;
+
+// ------------------------------------------------------------
+// 通信中に登録要求があったかどうか
+// true なら、通信完了後に自動送信する
+// ------------------------------------------------------------
+var pendingRegister = false;
+
+function createXHR() {
+    if (window.XMLHttpRequest) {
+        return new XMLHttpRequest();
+    }
+
+    return new ActiveXObject("Microsoft.XMLHTTP");
+}
+
+function onChangeInput() {
+    var inputA = document.getElementById("inputA");
+    var inputB = document.getElementById("inputB");
+    var xhr = createXHR();
+
+    if (inputA.value === "") {
+        inputB.value = "";
+        isLoading = false;
+        return;
+    }
+
+    isLoading = true;
+
+    xhr.onreadystatechange = function () {
+        if (xhr.readyState === 4) {
+            isLoading = false;
+
+            if (xhr.status === 200) {
+                inputB.value = xhr.responseText;
+            } else {
+                inputB.value = "";
+            }
+
+            // 通信中に登録ボタンが押されていたら、
+            // 通信完了後に自動で登録処理を再実行する
+            if (pendingRegister) {
+                pendingRegister = false;
+                doRegister();
+            }
+        }
+    };
+
+    xhr.open("GET", "/getValue?key=" + encodeURIComponent(inputA.value), true);
+    xhr.send(null);
+}
+
+function doRegister() {
+    var inputB = document.getElementById("inputB");
+
+    // まだ通信中なら、「登録したい」という意思だけ記録して終わる
+    if (isLoading) {
+        pendingRegister = true;
+        return false;
+    }
+
+    if (inputB.value === "") {
+        return false;
+    }
+
+    document.forms[0].submit();
+    return true;
+}
