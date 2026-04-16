@@ -36,6 +36,7 @@ $labelFilterNote = From-CodePoints @(12501,12451,12523,12479,32080,26524,12395,3
 
 $labelProgramId = From-CodePoints @(12503,12525,12464,12521,12512,73,68)
 $labelFunctionName = From-CodePoints @(27231,33021,21517)
+$labelClassificationRelated = From-CodePoints @(20998,39006,38306,36899)
 $labelSubsystem = From-CodePoints @(12469,12502,12471,12473,12486,12512)
 $labelBlock = From-CodePoints @(12502,12525,12483,12463)
 $labelGroup = From-CodePoints @(25285,24403,71,82,79,85,80)
@@ -94,6 +95,7 @@ $styleTableWrap = 19
 $styleSummaryRibbon = 20
 
 $columnMap = @{
+    ClassificationRelated = 'D'
     ProgramId = 'H'
     FunctionName = 'F'
     Subsystem = 'E'
@@ -374,49 +376,50 @@ function New-DashboardWorksheetXml {
     $dataEndRow = $dataStartRow + $dataRowCount - 1
     $lastWorksheetRow = [math]::Max($dataEndRow, 9)
 
-    $visibleCountFormula = 'SUBTOTAL(9,AE' + $dataStartRow + ':AE' + $dataEndRow + ')'
-    $inProgressCountFormula = 'SUBTOTAL(9,AB' + $dataStartRow + ':AB' + $dataEndRow + ')'
-    $completedCountFormula = 'SUBTOTAL(9,AC' + $dataStartRow + ':AC' + $dataEndRow + ')'
-    $delayCountFormula = 'SUBTOTAL(9,AD' + $dataStartRow + ':AD' + $dataEndRow + ')'
-    $averageGapFormula = 'IFERROR(ROUND(SUBTOTAL(1,P' + $dataStartRow + ':P' + $dataEndRow + '),1),0)'
-    $overallAverageFormula = 'IFERROR(SUBTOTAL(1,Q' + $dataStartRow + ':Q' + $dataEndRow + '),0)'
-    $codeAverageFormula = 'IFERROR(SUBTOTAL(1,R' + $dataStartRow + ':R' + $dataEndRow + '),0)'
-    $testCaseAverageFormula = 'IFERROR(SUBTOTAL(1,S' + $dataStartRow + ':S' + $dataEndRow + '),0)'
-    $designAverageFormula = 'IFERROR(SUBTOTAL(1,T' + $dataStartRow + ':T' + $dataEndRow + '),0)'
-    $unitAverageFormula = 'IFERROR(SUBTOTAL(1,U' + $dataStartRow + ':U' + $dataEndRow + '),0)'
-    $stepTotalFormula = 'SUBTOTAL(9,Z' + $dataStartRow + ':Z' + $dataEndRow + ')'
+    $visibleCountFormula = 'SUBTOTAL(9,AF' + $dataStartRow + ':AF' + $dataEndRow + ')'
+    $inProgressCountFormula = 'SUBTOTAL(9,AC' + $dataStartRow + ':AC' + $dataEndRow + ')'
+    $completedCountFormula = 'SUBTOTAL(9,AD' + $dataStartRow + ':AD' + $dataEndRow + ')'
+    $delayCountFormula = 'SUBTOTAL(9,AE' + $dataStartRow + ':AE' + $dataEndRow + ')'
+    $averageGapFormula = 'IFERROR(ROUND(SUBTOTAL(1,Q' + $dataStartRow + ':Q' + $dataEndRow + '),1),0)'
+    $overallAverageFormula = 'IFERROR(SUBTOTAL(1,R' + $dataStartRow + ':R' + $dataEndRow + '),0)'
+    $codeAverageFormula = 'IFERROR(SUBTOTAL(1,S' + $dataStartRow + ':S' + $dataEndRow + '),0)'
+    $testCaseAverageFormula = 'IFERROR(SUBTOTAL(1,T' + $dataStartRow + ':T' + $dataEndRow + '),0)'
+    $designAverageFormula = 'IFERROR(SUBTOTAL(1,U' + $dataStartRow + ':U' + $dataEndRow + '),0)'
+    $unitAverageFormula = 'IFERROR(SUBTOTAL(1,V' + $dataStartRow + ':V' + $dataEndRow + '),0)'
+    $stepTotalFormula = 'SUBTOTAL(9,AA' + $dataStartRow + ':AA' + $dataEndRow + ')'
     $summaryBandFormula = '"' + $labelFilteredOverallProgress + ' " & TEXT(' + $overallAverageFormula + ',"0.0") & "% / ' + $labelAverageGap + ' " & TEXT(' + $averageGapFormula + ',"0.0") & " / ' + $labelStepCountTotal + ' " & TEXT(' + $stepTotalFormula + ',"0")'
 
     $mergeRefs = @(
-        'A1:AA1',
-        'A2:AA2',
-        'A3:G3', 'H3:N3', 'O3:U3', 'V3:AA3',
-        'A4:G4', 'H4:N4', 'O4:U4', 'V4:AA4',
-        'A5:G5', 'H5:N5', 'O5:U5', 'V5:AA5',
-        'A6:G6', 'H6:N6', 'O6:U6', 'V6:AA6',
-        'A7:AA7',
-        'A8:AA8'
+        'A1:AB1',
+        'A2:AB2',
+        'A3:G3', 'H3:N3', 'O3:U3', 'V3:AB3',
+        'A4:G4', 'H4:N4', 'O4:U4', 'V4:AB4',
+        'A5:G5', 'H5:N5', 'O5:U5', 'V5:AB5',
+        'A6:G6', 'H6:N6', 'O6:U6', 'V6:AB6',
+        'A7:AB7',
+        'A8:AB8'
     )
 
     $null = $builder.Append('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
     $null = $builder.Append('<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">')
-    $null = $builder.Append('<dimension ref="A1:AE' + $lastWorksheetRow + '"/>')
+    $null = $builder.Append('<dimension ref="A1:AF' + $lastWorksheetRow + '"/>')
     $null = $builder.Append('<sheetViews><sheetView workbookViewId="0" showGridLines="0" zoomScale="90"><pane ySplit="9" topLeftCell="A10" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A10" sqref="A10"/></sheetView></sheetViews>')
     $null = $builder.Append('<sheetFormatPr defaultRowHeight="19"/>')
     $null = $builder.Append('<cols>')
-    $null = $builder.Append('<col min="1" max="1" width="13" customWidth="1"/>')
-    $null = $builder.Append('<col min="2" max="2" width="17" customWidth="1"/>')
-    $null = $builder.Append('<col min="3" max="3" width="12" customWidth="1"/>')
-    $null = $builder.Append('<col min="4" max="4" width="10" customWidth="1"/>')
-    $null = $builder.Append('<col min="5" max="5" width="12" customWidth="1"/>')
-    $null = $builder.Append('<col min="6" max="12" width="10.5" customWidth="1"/>')
-    $null = $builder.Append('<col min="13" max="13" width="13" customWidth="1"/>')
-    $null = $builder.Append('<col min="14" max="15" width="11.5" customWidth="1"/>')
-    $null = $builder.Append('<col min="16" max="16" width="10" customWidth="1"/>')
-    $null = $builder.Append('<col min="17" max="25" width="12" customWidth="1"/>')
-    $null = $builder.Append('<col min="26" max="26" width="10" customWidth="1"/>')
-    $null = $builder.Append('<col min="27" max="27" width="17" customWidth="1"/>')
-    $null = $builder.Append('<col min="28" max="31" width="2" hidden="1" customWidth="1"/>')
+    $null = $builder.Append('<col min="1" max="1" width="14" customWidth="1"/>')
+    $null = $builder.Append('<col min="2" max="2" width="13" customWidth="1"/>')
+    $null = $builder.Append('<col min="3" max="3" width="17" customWidth="1"/>')
+    $null = $builder.Append('<col min="4" max="4" width="12" customWidth="1"/>')
+    $null = $builder.Append('<col min="5" max="5" width="10" customWidth="1"/>')
+    $null = $builder.Append('<col min="6" max="6" width="12" customWidth="1"/>')
+    $null = $builder.Append('<col min="7" max="13" width="10.5" customWidth="1"/>')
+    $null = $builder.Append('<col min="14" max="14" width="13" customWidth="1"/>')
+    $null = $builder.Append('<col min="15" max="16" width="11.5" customWidth="1"/>')
+    $null = $builder.Append('<col min="17" max="17" width="10" customWidth="1"/>')
+    $null = $builder.Append('<col min="18" max="26" width="12" customWidth="1"/>')
+    $null = $builder.Append('<col min="27" max="27" width="10" customWidth="1"/>')
+    $null = $builder.Append('<col min="28" max="28" width="17" customWidth="1"/>')
+    $null = $builder.Append('<col min="29" max="32" width="2" hidden="1" customWidth="1"/>')
     $null = $builder.Append('</cols>')
     $null = $builder.Append('<sheetData>')
 
@@ -465,38 +468,40 @@ function New-DashboardWorksheetXml {
     ) 26))
 
     $null = $builder.Append((New-RowXml 9 @(
-        (New-InlineStringCell 'A9' $labelSubsystem $styleTableHeader),
-        (New-InlineStringCell 'B9' $labelFunctionName $styleTableHeader),
-        (New-InlineStringCell 'C9' $labelBlock $styleTableHeader),
-        (New-InlineStringCell 'D9' $labelProgramId $styleTableHeader),
-        (New-InlineStringCell 'E9' $labelGroup $styleTableHeader),
-        (New-InlineStringCell 'F9' $labelOwner $styleTableHeader),
-        (New-InlineStringCell 'G9' $labelManager $styleTableHeader),
-        (New-InlineStringCell 'H9' $labelCodeReviewer $styleTableHeader),
-        (New-InlineStringCell 'I9' $labelCaseReviewer $styleTableHeader),
-        (New-InlineStringCell 'J9' $labelDesignReviewer $styleTableHeader),
-        (New-InlineStringCell 'K9' $labelTestReviewer $styleTableHeader),
-        (New-InlineStringCell 'L9' $labelCurrentOwner $styleTableHeader),
-        (New-InlineStringCell 'M9' $labelCurrentStatus $styleTableHeader),
-        (New-InlineStringCell 'N9' $labelPlannedFinish $styleTableHeader),
-        (New-InlineStringCell 'O9' $labelActualDate $styleTableHeader),
-        (New-InlineStringCell 'P9' $labelGapDays $styleTableHeader),
-        (New-InlineStringCell 'Q9' $labelOverallProgress $styleTableHeader),
-        (New-InlineStringCell 'R9' $labelCodePercent $styleTableHeader),
-        (New-InlineStringCell 'S9' $labelTestCasePercent $styleTableHeader),
-        (New-InlineStringCell 'T9' $labelDesignPercent $styleTableHeader),
-        (New-InlineStringCell 'U9' $labelUnitTestPercent $styleTableHeader),
-        (New-InlineStringCell 'V9' $labelCodeReview $styleTableHeader),
-        (New-InlineStringCell 'W9' $labelCaseReview $styleTableHeader),
-        (New-InlineStringCell 'X9' $labelDesignDocumentReview $styleTableHeader),
-        (New-InlineStringCell 'Y9' $labelTestReview $styleTableHeader),
-        (New-InlineStringCell 'Z9' $labelStepCount $styleTableHeader),
-        (New-InlineStringCell 'AA9' $labelRemarks $styleTableHeader)
+        (New-InlineStringCell 'A9' $labelClassificationRelated $styleTableHeader),
+        (New-InlineStringCell 'B9' $labelSubsystem $styleTableHeader),
+        (New-InlineStringCell 'C9' $labelFunctionName $styleTableHeader),
+        (New-InlineStringCell 'D9' $labelBlock $styleTableHeader),
+        (New-InlineStringCell 'E9' $labelProgramId $styleTableHeader),
+        (New-InlineStringCell 'F9' $labelGroup $styleTableHeader),
+        (New-InlineStringCell 'G9' $labelOwner $styleTableHeader),
+        (New-InlineStringCell 'H9' $labelManager $styleTableHeader),
+        (New-InlineStringCell 'I9' $labelCodeReviewer $styleTableHeader),
+        (New-InlineStringCell 'J9' $labelCaseReviewer $styleTableHeader),
+        (New-InlineStringCell 'K9' $labelDesignReviewer $styleTableHeader),
+        (New-InlineStringCell 'L9' $labelTestReviewer $styleTableHeader),
+        (New-InlineStringCell 'M9' $labelCurrentOwner $styleTableHeader),
+        (New-InlineStringCell 'N9' $labelCurrentStatus $styleTableHeader),
+        (New-InlineStringCell 'O9' $labelPlannedFinish $styleTableHeader),
+        (New-InlineStringCell 'P9' $labelActualDate $styleTableHeader),
+        (New-InlineStringCell 'Q9' $labelGapDays $styleTableHeader),
+        (New-InlineStringCell 'R9' $labelOverallProgress $styleTableHeader),
+        (New-InlineStringCell 'S9' $labelCodePercent $styleTableHeader),
+        (New-InlineStringCell 'T9' $labelTestCasePercent $styleTableHeader),
+        (New-InlineStringCell 'U9' $labelDesignPercent $styleTableHeader),
+        (New-InlineStringCell 'V9' $labelUnitTestPercent $styleTableHeader),
+        (New-InlineStringCell 'W9' $labelCodeReview $styleTableHeader),
+        (New-InlineStringCell 'X9' $labelCaseReview $styleTableHeader),
+        (New-InlineStringCell 'Y9' $labelDesignDocumentReview $styleTableHeader),
+        (New-InlineStringCell 'Z9' $labelTestReview $styleTableHeader),
+        (New-InlineStringCell 'AA9' $labelStepCount $styleTableHeader),
+        (New-InlineStringCell 'AB9' $labelRemarks $styleTableHeader)
     ) 24))
 
     for ($dashboardRow = $dataStartRow; $dashboardRow -le $dataEndRow; $dashboardRow++) {
         $sourceRow = $SourceDataStartRow + ($dashboardRow - $dataStartRow)
 
+        $classificationRelatedRef = SheetCellRef 'ClassificationRelated' $sourceRow
         $programIdRef = SheetCellRef 'ProgramId' $sourceRow
         $functionNameRef = SheetCellRef 'FunctionName' $sourceRow
         $subsystemRef = SheetCellRef 'Subsystem' $sourceRow
@@ -526,49 +531,50 @@ function New-DashboardWorksheetXml {
         $actualMaxFormula = 'MAX(N(' + (SheetCellRef 'CodeActualEnd' $sourceRow) + '),N(' + (SheetCellRef 'TestCaseActualEnd' $sourceRow) + '),N(' + (SheetCellRef 'DesignActualEnd' $sourceRow) + '),N(' + (SheetCellRef 'UnitTestActualEnd' $sourceRow) + '),N(' + (SheetCellRef 'UnitTestCompleted' $sourceRow) + '))'
 
         $null = $builder.Append((New-RowXml $dashboardRow @(
-            (New-FormulaCell ('A' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $subsystemRef + ')') $styleTableText -StringResult),
-            (New-FormulaCell ('B' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $functionNameRef + ')') $styleTableText -StringResult),
-            (New-FormulaCell ('C' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $blockRef + ')') $styleTableText -StringResult),
-            (New-FormulaCell ('D' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $programIdRef + ')') $styleTableText -StringResult),
-            (New-FormulaCell ('E' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $groupRef + ')') $styleTableText -StringResult),
-            (New-FormulaCell ('F' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $ownerRef + ')') $styleTableText -StringResult),
-            (New-FormulaCell ('G' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $managerRef + ')') $styleTableText -StringResult),
-            (New-FormulaCell ('H' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $codeOwnerRef + ')') $styleTableText -StringResult),
-            (New-FormulaCell ('I' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $testCaseOwnerRef + ')') $styleTableText -StringResult),
-            (New-FormulaCell ('J' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $designOwnerRef + ')') $styleTableText -StringResult),
-            (New-FormulaCell ('K' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $unitTestOwnerRef + ')') $styleTableText -StringResult),
-            (New-FormulaCell ('L' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $currentOwnerRef + ')') $styleTableText -StringResult),
-            (New-FormulaCell ('M' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $currentStatusRef + ')') $styleTableCenter -StringResult),
-            (New-FormulaCell ('N' + $dashboardRow) ('IF(' + $programIdRef + '="","",IF(' + $planMaxFormula + '=0,"",' + $planMaxFormula + '))') $styleTableDate),
-            (New-FormulaCell ('O' + $dashboardRow) ('IF(' + $programIdRef + '="","",IF(Q' + $dashboardRow + '>=100,IF(' + $actualMaxFormula + '=0,"",' + $actualMaxFormula + '),""))') $styleTableDate),
-            (New-FormulaCell ('P' + $dashboardRow) ('IF(N' + $dashboardRow + '="","",IF(O' + $dashboardRow + '<>"",ROUND(O' + $dashboardRow + '-N' + $dashboardRow + ',0),IF(Q' + $dashboardRow + '>0,ROUND(TODAY()-N' + $dashboardRow + ',0),"")))') $styleTableInteger),
-            (New-FormulaCell ('Q' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $progressFormula + ')') $styleTablePercent),
-            (New-FormulaCell ('R' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $codeProgressRef + ')') $styleTablePercent),
-            (New-FormulaCell ('S' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $testCaseProgressRef + ')') $styleTablePercent),
-            (New-FormulaCell ('T' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $designProgressRef + ')') $styleTablePercent),
-            (New-FormulaCell ('U' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $unitTestProgressRef + ')') $styleTablePercent),
-            (New-FormulaCell ('V' + $dashboardRow) ('IF(' + $programIdRef + '="","",IF(LEN(' + $codeReviewRef + ')=0,"",' + $codeReviewRef + '))') $styleTableCenter -StringResult),
-            (New-FormulaCell ('W' + $dashboardRow) ('IF(' + $programIdRef + '="","",IF(LEN(' + $caseReviewRef + ')=0,"",' + $caseReviewRef + '))') $styleTableCenter -StringResult),
-            (New-FormulaCell ('X' + $dashboardRow) ('IF(' + $programIdRef + '="","",IF(LEN(' + $designDocumentReviewRef + ')=0,"",' + $designDocumentReviewRef + '))') $styleTableCenter -StringResult),
-            (New-FormulaCell ('Y' + $dashboardRow) ('IF(' + $programIdRef + '="","",IF(LEN(' + $testReviewRef + ')=0,"",' + $testReviewRef + '))') $styleTableCenter -StringResult),
-            (New-FormulaCell ('Z' + $dashboardRow) ('IF(' + $programIdRef + '="","",IF(LEN(' + $stepCountRef + ')=0,"",' + $stepCountRef + '))') $styleTableInteger),
-            (New-FormulaCell ('AA' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $remarksRef + ')') $styleTableText -StringResult),
-            (New-FormulaCell ('AB' + $dashboardRow) ('IF(D' + $dashboardRow + '="","",IF(AND(Q' + $dashboardRow + '>0,Q' + $dashboardRow + '<100),1,0))') $styleTableInteger),
-            (New-FormulaCell ('AC' + $dashboardRow) ('IF(D' + $dashboardRow + '="","",IF(Q' + $dashboardRow + '>=100,1,0))') $styleTableInteger),
-            (New-FormulaCell ('AD' + $dashboardRow) ('IF(D' + $dashboardRow + '="","",IF(AND(P' + $dashboardRow + '<>"",P' + $dashboardRow + '>0),1,0))') $styleTableInteger),
-            (New-FormulaCell ('AE' + $dashboardRow) ('IF(D' + $dashboardRow + '="","",1)') $styleTableInteger)
+            (New-FormulaCell ('A' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $classificationRelatedRef + ')') $styleTableText -StringResult),
+            (New-FormulaCell ('B' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $subsystemRef + ')') $styleTableText -StringResult),
+            (New-FormulaCell ('C' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $functionNameRef + ')') $styleTableText -StringResult),
+            (New-FormulaCell ('D' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $blockRef + ')') $styleTableText -StringResult),
+            (New-FormulaCell ('E' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $programIdRef + ')') $styleTableText -StringResult),
+            (New-FormulaCell ('F' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $groupRef + ')') $styleTableText -StringResult),
+            (New-FormulaCell ('G' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $ownerRef + ')') $styleTableText -StringResult),
+            (New-FormulaCell ('H' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $managerRef + ')') $styleTableText -StringResult),
+            (New-FormulaCell ('I' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $codeOwnerRef + ')') $styleTableText -StringResult),
+            (New-FormulaCell ('J' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $testCaseOwnerRef + ')') $styleTableText -StringResult),
+            (New-FormulaCell ('K' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $designOwnerRef + ')') $styleTableText -StringResult),
+            (New-FormulaCell ('L' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $unitTestOwnerRef + ')') $styleTableText -StringResult),
+            (New-FormulaCell ('M' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $currentOwnerRef + ')') $styleTableText -StringResult),
+            (New-FormulaCell ('N' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $currentStatusRef + ')') $styleTableCenter -StringResult),
+            (New-FormulaCell ('O' + $dashboardRow) ('IF(' + $programIdRef + '="","",IF(' + $planMaxFormula + '=0,"",' + $planMaxFormula + '))') $styleTableDate),
+            (New-FormulaCell ('P' + $dashboardRow) ('IF(' + $programIdRef + '="","",IF(R' + $dashboardRow + '>=100,IF(' + $actualMaxFormula + '=0,"",' + $actualMaxFormula + '),""))') $styleTableDate),
+            (New-FormulaCell ('Q' + $dashboardRow) ('IF(O' + $dashboardRow + '="","",IF(P' + $dashboardRow + '<>"",ROUND(P' + $dashboardRow + '-O' + $dashboardRow + ',0),IF(R' + $dashboardRow + '>0,ROUND(TODAY()-O' + $dashboardRow + ',0),"")))') $styleTableInteger),
+            (New-FormulaCell ('R' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $progressFormula + ')') $styleTablePercent),
+            (New-FormulaCell ('S' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $codeProgressRef + ')') $styleTablePercent),
+            (New-FormulaCell ('T' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $testCaseProgressRef + ')') $styleTablePercent),
+            (New-FormulaCell ('U' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $designProgressRef + ')') $styleTablePercent),
+            (New-FormulaCell ('V' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $unitTestProgressRef + ')') $styleTablePercent),
+            (New-FormulaCell ('W' + $dashboardRow) ('IF(' + $programIdRef + '="","",IF(LEN(' + $codeReviewRef + ')=0,"",' + $codeReviewRef + '))') $styleTableCenter -StringResult),
+            (New-FormulaCell ('X' + $dashboardRow) ('IF(' + $programIdRef + '="","",IF(LEN(' + $caseReviewRef + ')=0,"",' + $caseReviewRef + '))') $styleTableCenter -StringResult),
+            (New-FormulaCell ('Y' + $dashboardRow) ('IF(' + $programIdRef + '="","",IF(LEN(' + $designDocumentReviewRef + ')=0,"",' + $designDocumentReviewRef + '))') $styleTableCenter -StringResult),
+            (New-FormulaCell ('Z' + $dashboardRow) ('IF(' + $programIdRef + '="","",IF(LEN(' + $testReviewRef + ')=0,"",' + $testReviewRef + '))') $styleTableCenter -StringResult),
+            (New-FormulaCell ('AA' + $dashboardRow) ('IF(' + $programIdRef + '="","",IF(LEN(' + $stepCountRef + ')=0,"",' + $stepCountRef + '))') $styleTableInteger),
+            (New-FormulaCell ('AB' + $dashboardRow) ('IF(' + $programIdRef + '="","",' + $remarksRef + ')') $styleTableText -StringResult),
+            (New-FormulaCell ('AC' + $dashboardRow) ('IF(E' + $dashboardRow + '="","",IF(AND(R' + $dashboardRow + '>0,R' + $dashboardRow + '<100),1,0))') $styleTableInteger),
+            (New-FormulaCell ('AD' + $dashboardRow) ('IF(E' + $dashboardRow + '="","",IF(R' + $dashboardRow + '>=100,1,0))') $styleTableInteger),
+            (New-FormulaCell ('AE' + $dashboardRow) ('IF(E' + $dashboardRow + '="","",IF(AND(Q' + $dashboardRow + '<>"",Q' + $dashboardRow + '>0),1,0))') $styleTableInteger),
+            (New-FormulaCell ('AF' + $dashboardRow) ('IF(E' + $dashboardRow + '="","",1)') $styleTableInteger)
         )))
     }
 
     $null = $builder.Append('</sheetData>')
-    $null = $builder.Append('<autoFilter ref="A9:AA' + $lastWorksheetRow + '"/>')
+    $null = $builder.Append('<autoFilter ref="A9:AB' + $lastWorksheetRow + '"/>')
     $null = $builder.Append('<mergeCells count="' + $mergeRefs.Count + '">')
     foreach ($mergeRef in $mergeRefs) {
         $null = $builder.Append('<mergeCell ref="' + $mergeRef + '"/>')
     }
     $null = $builder.Append('</mergeCells>')
-    $null = $builder.Append('<conditionalFormatting sqref="Q' + $dataStartRow + ':U' + $dataEndRow + '"><cfRule type="dataBar" priority="1"><dataBar><cfvo type="num" val="0"/><cfvo type="num" val="100"/><color rgb="FF2563EB"/></dataBar></cfRule></conditionalFormatting>')
-    $null = $builder.Append('<conditionalFormatting sqref="P' + $dataStartRow + ':P' + $dataEndRow + '"><cfRule type="colorScale" priority="2"><colorScale><cfvo type="num" val="-10"/><cfvo type="num" val="0"/><cfvo type="num" val="10"/><color rgb="FF16A34A"/><color rgb="FFFDE68A"/><color rgb="FFDC2626"/></colorScale></cfRule></conditionalFormatting>')
+    $null = $builder.Append('<conditionalFormatting sqref="R' + $dataStartRow + ':V' + $dataEndRow + '"><cfRule type="dataBar" priority="1"><dataBar><cfvo type="num" val="0"/><cfvo type="num" val="100"/><color rgb="FF2563EB"/></dataBar></cfRule></conditionalFormatting>')
+    $null = $builder.Append('<conditionalFormatting sqref="Q' + $dataStartRow + ':Q' + $dataEndRow + '"><cfRule type="colorScale" priority="2"><colorScale><cfvo type="num" val="-10"/><cfvo type="num" val="0"/><cfvo type="num" val="10"/><color rgb="FF16A34A"/><color rgb="FFFDE68A"/><color rgb="FFDC2626"/></colorScale></cfRule></conditionalFormatting>')
     $null = $builder.Append('<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>')
     $null = $builder.Append('</worksheet>')
 
